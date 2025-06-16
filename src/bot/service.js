@@ -44,16 +44,20 @@ class BotService {
         refresh_token: user.refreshToken
       });
       const youtube = google.youtube('v3');
+      // Remove broadcastStatus, use mine:true and filter in code
       const response = await youtube.liveBroadcasts.list({
         auth: oauth2Client,
         part: 'snippet',
-        mine: true,
-        broadcastStatus: 'active'
+        mine: true
       });
-      if (response.data.items && response.data.items.length > 0) {
+      // Find a live broadcast
+      const liveBroadcast = response.data.items && response.data.items.find(
+        b => b.snippet && b.snippet.liveBroadcastContent === 'live'
+      );
+      if (liveBroadcast) {
         if (!this.activeStreams.has(channelId)) {
           console.log(`[BOT] Detected live stream for channel: ${channelId}`);
-          await this.startBot(channelId, true); // true = from live detection
+          await this.startBot(channelId, true, liveBroadcast);
         }
       } else {
         if (this.activeStreams.has(channelId)) {
@@ -66,7 +70,7 @@ class BotService {
     }
   }
 
-  async startBot(channelId, fromLiveDetection = false) {
+  async startBot(channelId, fromLiveDetection = false, liveBroadcast = null) {
     try {
       const user = await User.findOne({ channelId });
       if (!user) throw new Error('User not found');
@@ -80,18 +84,25 @@ class BotService {
         refresh_token: user.refreshToken
       });
       const youtube = google.youtube('v3');
-      // Get active live stream
-      const response = await youtube.liveBroadcasts.list({
-        auth: oauth2Client,
-        part: 'snippet',
-        mine: true,
-        broadcastStatus: 'active'
-      });
-      if (!response.data.items.length) {
-        console.log(`[BOT] No active stream found for channel: ${channelId}`);
-        return false;
+      // Remove broadcastStatus, use mine:true and filter in code
+      let liveChatId;
+      if (liveBroadcast) {
+        liveChatId = liveBroadcast.snippet.liveChatId;
+      } else {
+        const response = await youtube.liveBroadcasts.list({
+          auth: oauth2Client,
+          part: 'snippet',
+          mine: true
+        });
+        const found = response.data.items && response.data.items.find(
+          b => b.snippet && b.snippet.liveBroadcastContent === 'live'
+        );
+        if (!found) {
+          console.log(`[BOT] No active stream found for channel: ${channelId}`);
+          return false;
+        }
+        liveChatId = found.snippet.liveChatId;
       }
-      const liveChatId = response.data.items[0].snippet.liveChatId;
       this.activeStreams.set(channelId, { liveChatId, nextPageToken: null });
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
       // Start polling chat
