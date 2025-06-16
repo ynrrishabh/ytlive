@@ -20,6 +20,11 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/auth', authRoutes);
 app.use('/bot', botRoutes);
 
+// Root route - redirect to /auth/login
+app.get('/', (req, res) => {
+  res.redirect('/auth/login');
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

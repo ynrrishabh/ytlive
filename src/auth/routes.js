@@ -9,7 +9,7 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI
 );
 
-// Generate OAuth URL
+// Generate OAuth URL and redirect
 router.get('/login', (req, res) => {
   const scopes = [
     'https://www.googleapis.com/auth/youtube.readonly',
@@ -22,7 +22,8 @@ router.get('/login', (req, res) => {
     prompt: 'consent'
   });
 
-  res.json({ authUrl });
+  // Redirect directly to Google OAuth
+  res.redirect(authUrl);
 });
 
 // Handle OAuth callback
@@ -56,10 +57,11 @@ router.get('/callback', async (req, res) => {
       { upsert: true, new: true }
     );
 
-    res.json({ success: true, message: 'Authentication successful' });
+    // Redirect to a simple success message
+    res.send('<h1>Success!</h1><p>Your YouTube account has been connected successfully. You can now close this window.</p>');
   } catch (error) {
     console.error('Auth callback error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
+    res.send('<h1>Error</h1><p>Authentication failed. Please try again.</p>');
   }
 });
 
