@@ -1,0 +1,38 @@
+{
+  "name": "ytlive",
+  "version": "1.0.0",
+  "description": "YouTube Live Chat bot with points system, leaderboard, and minigames",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "youtube",
+    "live",
+    "chat",
+    "bot",
+    "streamlabs",
+    "points",
+    "leaderboard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.1.3",
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "googleapis": "^129.0.0",
+    "mongoose": "^8.0.1",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
