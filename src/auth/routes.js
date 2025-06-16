@@ -1,6 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const User = require('../models/User');
+const botService = require('../bot/service');
 const router = express.Router();
 
 const oauth2Client = new google.auth.OAuth2(
@@ -22,7 +23,7 @@ router.get('/login', (req, res) => {
     prompt: 'consent'
   });
 
-  // Redirect directly to Google OAuth
+  console.log('[AUTH] Redirecting user to Google OAuth');
   res.redirect(authUrl);
 });
 
@@ -70,9 +71,18 @@ router.get('/callback', async (req, res) => {
       },
       { upsert: true, new: true }
     );
+    console.log(`[AUTH] User authenticated: ${channel.snippet.title} (${channel.id})`);
+
+    // Automatically start the bot for this channel
+    const started = await botService.startBot(channel.id);
+    if (started) {
+      console.log(`[BOT] Started automatically for channel: ${channel.snippet.title} (${channel.id})`);
+    } else {
+      console.error(`[BOT] Failed to start for channel: ${channel.snippet.title} (${channel.id})`);
+    }
 
     // Redirect to a simple success message
-    res.send('<h1>Success!</h1><p>Your YouTube account has been connected successfully. You can now close this window.</p>');
+    res.send('<h1>Success!</h1><p>Your YouTube account has been connected and the bot is now active. You can now close this window.</p>');
   } catch (error) {
     console.error('Auth callback error:', error);
     res.send(`<h1>Error</h1><p>Authentication failed: ${error.message}</p><p>Please try again.</p>`);
