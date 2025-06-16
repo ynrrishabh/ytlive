@@ -44,13 +44,11 @@ class BotService {
         refresh_token: user.refreshToken
       });
       const youtube = google.youtube('v3');
-      // Remove broadcastStatus, use mine:true and filter in code
       const response = await youtube.liveBroadcasts.list({
         auth: oauth2Client,
         part: 'snippet',
         mine: true
       });
-      // Find a live broadcast
       const liveBroadcast = response.data.items && response.data.items.find(
         b => b.snippet && b.snippet.liveBroadcastContent === 'live'
       );
@@ -60,6 +58,8 @@ class BotService {
           await this.startBot(channelId, true, liveBroadcast);
         }
       } else {
+        // Always log when checked, even if no live
+        console.log(`[BOT] Checked channel: ${channelId} - No live stream found.`);
         if (this.activeStreams.has(channelId)) {
           console.log(`[BOT] No active stream found for channel: ${channelId}, stopping bot.`);
           this.stopBot(channelId);
