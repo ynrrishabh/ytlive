@@ -46,12 +46,12 @@ class BotService {
       const youtube = google.youtube('v3');
       const response = await youtube.liveBroadcasts.list({
         auth: oauth2Client,
-        part: 'snippet',
+        part: 'snippet,contentDetails,status',
         mine: true
       });
       console.log('[BOT][DEBUG] liveBroadcasts.list response:', JSON.stringify(response.data.items, null, 2));
       const liveBroadcast = response.data.items && response.data.items.find(
-        b => b.snippet && b.snippet.liveBroadcastContent === 'live'
+        b => b.status && b.status.lifeCycleStatus === 'live'
       );
       if (liveBroadcast) {
         if (!this.activeStreams.has(channelId)) {
@@ -85,18 +85,17 @@ class BotService {
         refresh_token: user.refreshToken
       });
       const youtube = google.youtube('v3');
-      // Remove broadcastStatus, use mine:true and filter in code
       let liveChatId;
       if (liveBroadcast) {
         liveChatId = liveBroadcast.snippet.liveChatId;
       } else {
         const response = await youtube.liveBroadcasts.list({
           auth: oauth2Client,
-          part: 'snippet',
+          part: 'snippet,contentDetails,status',
           mine: true
         });
         const found = response.data.items && response.data.items.find(
-          b => b.snippet && b.snippet.liveBroadcastContent === 'live'
+          b => b.status && b.status.lifeCycleStatus === 'live'
         );
         if (!found) {
           console.log(`[BOT] No active stream found for channel: ${channelId}`);
