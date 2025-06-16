@@ -165,7 +165,7 @@ class BotService {
       }
       // Update last message timestamp
       this.lastMessageTimestamps.set(channelId, Date.now());
-      const { authorDetails, snippet } = message.snippet;
+      const { snippet, authorDetails } = message;
       const text = snippet.displayMessage.toLowerCase();
       // Update viewer stats
       await this.updateViewerStats(channelId, authorDetails);
@@ -276,6 +276,7 @@ class BotService {
       const result = await model.generateContent(question);
       const response = await result.response;
       const text = response.text();
+      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
       await this.sendMessage(channelId, `${author.displayName}, ${text}`);
       console.log(`[BOT] Sent AI response to ${author.displayName} in channel ${channelId}`);
     } catch (error) {
