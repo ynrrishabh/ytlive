@@ -16,8 +16,8 @@ class BotService {
 
   // Periodically check for live streams for all users
   initLiveDetection() {
-    // Run every 2 minutes
-    cron.schedule('*/2 * * * *', async () => {
+    // Run every 1 minute
+    cron.schedule('*/1 * * * *', async () => {
       try {
         const users = await User.find({});
         for (const user of users) {
@@ -27,7 +27,7 @@ class BotService {
         console.error('[BOT] Error in live detection cron:', err);
       }
     });
-    console.log('[BOT] Live detection cron job started (every 2 minutes)');
+    console.log('[BOT] Live detection cron job started (every 1 minute)');
   }
 
   async checkAndStartLive(channelId) {
