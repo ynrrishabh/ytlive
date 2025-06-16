@@ -128,6 +128,7 @@ class BotService {
     if (!stream) return;
     try {
       const youtube = google.youtube('v3');
+      console.log(`[BOT][DEBUG] Polling liveChatId for channel ${channelId}: ${stream.liveChatId}`);
       const response = await youtube.liveChatMessages.list({
         auth: oauth2Client,
         liveChatId: stream.liveChatId,
@@ -150,12 +151,16 @@ class BotService {
 
   async processMessage(channelId, message) {
     try {
+      if (!message || !message.snippet || !message.snippet.displayMessage) {
+        console.log('[BOT][DEBUG] Skipping message with missing snippet/displayMessage:', message);
+        return;
+      }
       const { authorDetails, snippet } = message.snippet;
       const text = snippet.displayMessage.toLowerCase();
       // Update viewer stats
       await this.updateViewerStats(channelId, authorDetails);
       // Handle commands
-      if (text.startsWith('!')) {
+      if (text.startsWith('!') || text.startsWith('/')) {
         await this.handleCommand(channelId, authorDetails, text);
       }
       console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
@@ -284,6 +289,7 @@ class BotService {
         refresh_token: user.refreshToken
       });
       const youtube = google.youtube('v3');
+      console.log(`[BOT][DEBUG] Sending message to liveChatId for channel ${channelId}: ${stream.liveChatId}`);
       await youtube.liveChatMessages.insert({
         auth: oauth2Client,
         part: 'snippet',
