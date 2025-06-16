@@ -11,6 +11,7 @@ class BotService {
     this.activeStreams = new Map(); // channelId -> { liveChatId, nextPageToken }
     this.autoMessageTimers = new Map(); // channelId -> timer
     this.liveCheckTasks = new Map(); // channelId -> cron task
+    this.lastMessageTimestamps = new Map(); // channelId -> timestamp
     this.initLiveDetection();
   }
 
@@ -21,13 +22,20 @@ class BotService {
       try {
         const users = await User.find({});
         for (const user of users) {
-          this.checkAndStartLive(user.channelId);
+          const lastMsg = this.lastMessageTimestamps.get(user.channelId);
+          const now = Date.now();
+          if (!lastMsg || now - lastMsg > 35 * 60 * 1000) {
+            console.log(`[BOT][INACTIVITY] No message for 35min (or never) in channel ${user.channelId}, checking live...`);
+            this.checkAndStartLive(user.channelId);
+          } else {
+            console.log(`[BOT][INACTIVITY] Channel ${user.channelId} is active, last message ${Math.round((now - lastMsg)/60000)} min ago.`);
+          }
         }
       } catch (err) {
         console.error('[BOT] Error in live detection cron:', err);
       }
     });
-    console.log('[BOT] Live detection cron job started (every 1 minute)');
+    console.log('[BOT] Live detection cron job started (every 1 minute, inactivity-aware)');
   }
 
   async checkAndStartLive(channelId) {
@@ -155,6 +163,8 @@ class BotService {
         console.log('[BOT][DEBUG] Skipping message with missing snippet/displayMessage:', message);
         return;
       }
+      // Update last message timestamp
+      this.lastMessageTimestamps.set(channelId, Date.now());
       const { authorDetails, snippet } = message.snippet;
       const text = snippet.displayMessage.toLowerCase();
       // Update viewer stats
