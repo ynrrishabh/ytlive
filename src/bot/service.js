@@ -49,6 +49,7 @@ class BotService {
         part: 'snippet',
         mine: true
       });
+      console.log('[BOT][DEBUG] liveBroadcasts.list response:', JSON.stringify(response.data.items, null, 2));
       const liveBroadcast = response.data.items && response.data.items.find(
         b => b.snippet && b.snippet.liveBroadcastContent === 'live'
       );
@@ -134,6 +135,7 @@ class BotService {
         part: 'snippet',
         pageToken: stream.nextPageToken
       });
+      console.log(`[BOT][DEBUG] liveChatMessages.list response for channel ${channelId}:`, JSON.stringify(response.data.items, null, 2));
       stream.nextPageToken = response.data.nextPageToken;
       // Process messages
       for (const item of response.data.items) {
