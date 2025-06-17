@@ -1,7 +1,62 @@
 const express = require('express');
 const router = express.Router();
 const botService = require('./service');
+const projectService = require('../services/projectService');
 const User = require('../models/User');
+const Viewer = require('../models/Viewer');
+
+// Handle OAuth callback (for manual setup)
+router.get('/oauth/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    const projectId = state; // We'll use state parameter to pass projectId
+    
+    if (!code || !projectId) {
+      return res.status(400).json({ error: 'Missing code or project ID' });
+    }
+    
+    await projectService.handleOAuthCallback(projectId, code);
+    
+    // Get updated status
+    const status = await projectService.getProjectStatus();
+    
+    console.log(`[OAUTH] Successfully configured ${projectId}`);
+    console.log(`[OAUTH] Status: ${status.configured}/${status.total} accounts configured`);
+    
+    if (status.configured === status.total) {
+      console.log('[OAUTH] ✅ All OAuth accounts configured! Bot is ready to start.');
+      res.json({ 
+        message: `All ${status.total} OAuth accounts configured! Bot is ready to start.`,
+        status
+      });
+    } else {
+      console.log(`[OAUTH] ⚠️  ${status.configured}/${status.total} accounts configured. Continue with remaining accounts.`);
+      res.json({ 
+        message: `${status.configured}/${status.total} OAuth accounts configured. Continue with remaining accounts.`,
+        status
+      });
+    }
+  } catch (error) {
+    console.error('[OAUTH] Error handling OAuth callback:', error);
+    res.status(500).json({ error: 'OAuth setup failed' });
+  }
+});
+
+// Get bot status (for debugging)
+router.get('/status', async (req, res) => {
+  try {
+    const status = await projectService.getProjectStatus();
+    const botStatus = botService.getBotStatus();
+    
+    res.json({
+      projects: status,
+      bot: botStatus
+    });
+  } catch (error) {
+    console.error('Error getting bot status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Start the bot for a channel
 router.post('/start/:channelId', async (req, res) => {

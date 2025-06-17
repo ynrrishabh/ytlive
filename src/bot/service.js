@@ -3,10 +3,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const User = require('../models/User');
 const Viewer = require('../models/Viewer');
 const cron = require('node-cron');
-const Bot = require('../models/Bot');
 const Channel = require('../models/Channel');
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const projectService = require('../services/projectService');
 
 class BotService {
   constructor() {
@@ -17,16 +15,23 @@ class BotService {
     this.pollIntervals = new Map(); // channelId -> pollInterval
     this.gambleCooldowns = new Map(); // channelId:userId -> timestamp
     this.askCooldowns = new Map(); // channelId:userId -> timestamp for /ask cooldown
+    this.isInitialized = false;
     this.initBot();
   }
 
   async initBot() {
     try {
-      // Get bot credentials
-      const bot = await Bot.findOne({});
-      if (!bot) {
-        console.log('[BOT] No bot credentials found. Please authenticate bot first.');
+      // Initialize projects first
+      const projectStatus = await projectService.initializeProjects();
+      console.log(`[BOT] Project status: ${projectStatus.configured}/${projectStatus.total} configured`);
+      
+      if (projectStatus.configured === 0) {
+        console.log('[BOT] No OAuth accounts configured. Please setup OAuth accounts first.');
         return;
+      }
+      
+      if (projectStatus.configured < projectStatus.total) {
+        console.log(`[BOT] ${projectStatus.configured}/${projectStatus.total} OAuth accounts configured. Bot will start with available accounts.`);
       }
 
       // Get all channels to monitor
@@ -41,9 +46,19 @@ class BotService {
 
       // Start cron job for continuous monitoring
       this.initLiveDetection();
+      this.isInitialized = true;
     } catch (error) {
       console.error('[BOT] Error initializing bot:', error);
     }
+  }
+
+  // Get bot status
+  getBotStatus() {
+    return {
+      isInitialized: this.isInitialized,
+      activeStreams: this.activeStreams.size,
+      channels: Array.from(this.activeStreams.keys())
+    };
   }
 
   // Periodically check for live streams for all users
@@ -79,26 +94,11 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      const bot = await Bot.findOne({});
-      if (!bot) {
-        console.log(`[BOT] No bot credentials found. Please authenticate bot first.`);
-        return;
-      }
-
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      oauth2Client.setCredentials({
-        access_token: bot.accessToken,
-        refresh_token: bot.refreshToken
-      });
-
+      const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
       const youtube = google.youtube('v3');
       
       // Search for live streams (works for both public and unlisted)
-      console.log(`[BOT] Searching for live streams on channel ${channelId}...`);
+      console.log(`[BOT] Searching for live streams on channel ${channelId} using ${project.projectId}...`);
       const searchResponse = await youtube.search.list({
         auth: oauth2Client,
         part: 'id,snippet',
@@ -143,7 +143,12 @@ class BotService {
     } catch (err) {
       console.error(`[BOT] Error checking live for channel ${channelId}:`, err);
       if (err.message?.includes('quota')) {
-        console.error('[BOT] YouTube API quota exceeded. Waiting for reset...');
+        console.error('[BOT] YouTube API quota exceeded. Switching to next project...');
+        // Mark current project as quota exceeded and retry
+        const { project } = await projectService.getYouTubeOAuthClient();
+        await projectService.markQuotaExceeded(project.projectId);
+        // Retry with next project
+        setTimeout(() => this.checkAndStartLive(channelId), 1000);
       }
     }
   }
@@ -191,20 +196,7 @@ class BotService {
     if (!stream) return;
 
     try {
-      // Get bot credentials
-      const bot = await Bot.findOne({});
-      if (!bot) throw new Error('Bot credentials not found');
-
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      oauth2Client.setCredentials({
-        access_token: bot.accessToken,
-        refresh_token: bot.refreshToken
-      });
-
+      const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
       const youtube = google.youtube('v3');
       
       // If this is the first poll, only get the pageToken and do NOT process or print any messages
@@ -240,6 +232,11 @@ class BotService {
       }
     } catch (error) {
       console.error('[BOT] Error polling chat:', error);
+      if (error.message?.includes('quota')) {
+        console.error('[BOT] YouTube API quota exceeded during chat polling. Switching to next project...');
+        const { project } = await projectService.getYouTubeOAuthClient();
+        await projectService.markQuotaExceeded(project.projectId);
+      }
       // Don't stop polling on error, just log it
     }
   }
@@ -250,9 +247,12 @@ class BotService {
         return;
       }
 
-      // Get bot info to check if message is from bot
-      const bot = await Bot.findOne({});
-      if (!bot || message.authorDetails.channelId === bot.botId) {
+      // Get current project to check if message is from bot
+      const { project } = await projectService.getYouTubeOAuthClient();
+      const botChannelId = project.oauthTokens?.access_token ? 
+        await this.getBotChannelId(project) : null;
+      
+      if (botChannelId && message.authorDetails.channelId === botChannelId) {
         // Skip processing bot's own messages
         return;
       }
@@ -284,6 +284,37 @@ class BotService {
       console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
     } catch (error) {
       console.error('[BOT] Error processing message:', error);
+    }
+  }
+
+  // Get bot's channel ID for message filtering
+  async getBotChannelId(project) {
+    try {
+      const oauth2Client = new google.auth.OAuth2(
+        project.googleClientId,
+        project.googleClientSecret,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+      
+      oauth2Client.setCredentials({
+        access_token: project.oauthTokens.access_token,
+        refresh_token: project.oauthTokens.refresh_token
+      });
+
+      const youtube = google.youtube('v3');
+      const response = await youtube.channels.list({
+        auth: oauth2Client,
+        part: 'id',
+        mine: true
+      });
+
+      if (response.data.items && response.data.items.length > 0) {
+        return response.data.items[0].id;
+      }
+      return null;
+    } catch (error) {
+      console.error('[BOT] Error getting bot channel ID:', error);
+      return null;
     }
   }
 
@@ -521,14 +552,18 @@ class BotService {
         return;
       }
 
-      // Get bot info to check if message is from bot
-      const bot = await Bot.findOne({});
-      if (!bot || author.channelId === bot.botId) {
+      // Get current project to check if message is from bot
+      const { project } = await projectService.getYouTubeOAuthClient();
+      const botChannelId = project.oauthTokens?.access_token ? 
+        await this.getBotChannelId(project) : null;
+      
+      if (botChannelId && author.channelId === botChannelId) {
         // Skip processing bot's own messages
         return;
       }
 
-      // Use Gemini 2.0 Flash for concise responses
+      // Use Gemini AI from current project
+      const genAI = await projectService.getGeminiAI();
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add instruction for very brief response (max 180 chars)
@@ -552,25 +587,12 @@ class BotService {
   async sendMessage(channelId, text) {
     const stream = this.activeStreams.get(channelId);
     if (!stream) return;
+    
     try {
-      // Get the first (and only) bot instance since we only have one bot
-      const bot = await Bot.findOne({});
-      if (!bot) {
-        console.error('[BOT] No bot credentials found');
-        return;
-      }
-
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      oauth2Client.setCredentials({
-        access_token: bot.accessToken,
-        refresh_token: bot.refreshToken
-      });
+      const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
       const youtube = google.youtube('v3');
-      console.log(`[BOT][DEBUG] Sending message to liveChatId for channel ${channelId}: ${stream.liveChatId}`);
+      
+      console.log(`[BOT][DEBUG] Sending message to liveChatId for channel ${channelId} using ${project.projectId}: ${stream.liveChatId}`);
       await youtube.liveChatMessages.insert({
         auth: oauth2Client,
         part: 'snippet',
@@ -584,9 +606,16 @@ class BotService {
           }
         }
       });
-      console.log(`[BOT] Sent message: "${text}" to channel: ${channelId}`);
+      console.log(`[BOT] Sent message: "${text}" to channel: ${channelId} using ${project.projectId}`);
     } catch (error) {
       console.error('[BOT] Error sending message:', error);
+      if (error.message?.includes('quota')) {
+        console.error('[BOT] YouTube API quota exceeded while sending message. Switching to next project...');
+        const { project } = await projectService.getYouTubeOAuthClient();
+        await projectService.markQuotaExceeded(project.projectId);
+        // Retry with next project
+        setTimeout(() => this.sendMessage(channelId, text), 1000);
+      }
     }
   }
 
@@ -612,6 +641,10 @@ class BotService {
     if (this.autoMessageTimers.has(channelId)) {
       clearInterval(this.autoMessageTimers.get(channelId));
       this.autoMessageTimers.delete(channelId);
+    }
+    if (this.pollIntervals.has(channelId)) {
+      clearInterval(this.pollIntervals.get(channelId));
+      this.pollIntervals.delete(channelId);
     }
     console.log(`[BOT] Stopped for channel: ${channelId}`);
   }

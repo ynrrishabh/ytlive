@@ -20,9 +20,13 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/auth', authRoutes);
 app.use('/bot', botRoutes);
 
-// Root route - redirect to /auth/login
+// Root route - simple status
 app.get('/', (req, res) => {
-  res.redirect('/auth/login');
+  res.json({ 
+    message: 'YouTube Live Chat Bot API',
+    status: 'running',
+    setup: 'Check console logs for OAuth setup instructions'
+  });
 });
 
 // Health check endpoint
