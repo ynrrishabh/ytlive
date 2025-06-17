@@ -48,27 +48,23 @@ class BotService {
     // Run every 1 minute
     cron.schedule('*/1 * * * *', async () => {
       try {
-        const users = await User.find({});
-        for (const user of users) {
-          const lastMsg = this.lastMessageTimestamps.get(user.channelId);
-          const now = Date.now();
-          if (!lastMsg || now - lastMsg > 35 * 60 * 1000) {
-            console.log(`[BOT][INACTIVITY] No message for 35min (or never) in channel ${user.channelId}, checking live...`);
-            this.checkAndStartLive(user.channelId);
-          } else {
-            console.log(`[BOT][INACTIVITY] Channel ${user.channelId} is active, last message ${Math.round((now - lastMsg)/60000)} min ago.`);
-          }
+        console.log('[BOT] Running scheduled live check...');
+        const channels = await Channel.find({});
+        console.log(`[BOT] Checking ${channels.length} channels for live streams...`);
+        
+        for (const channel of channels) {
+          console.log(`[BOT] Checking if channel ${channel.channelId} is live...`);
+          await this.checkAndStartLive(channel.channelId);
         }
       } catch (err) {
         console.error('[BOT] Error in live detection cron:', err);
       }
     });
-    console.log('[BOT] Live detection cron job started (every 1 minute, inactivity-aware)');
+    console.log('[BOT] Live detection cron job started (every 1 minute)');
   }
 
   async checkAndStartLive(channelId) {
     try {
-      // Get bot credentials
       const bot = await Bot.findOne({});
       if (!bot) {
         console.log(`[BOT] No bot credentials found. Please authenticate bot first.`);
@@ -87,45 +83,70 @@ class BotService {
 
       const youtube = google.youtube('v3');
       
-      // First, search for live streams on the target channel
-      const searchResponse = await youtube.search.list({
+      // Try to get live broadcasts directly (includes unlisted)
+      console.log(`[BOT] Checking live broadcasts for channel ${channelId}...`);
+      const broadcastResponse = await youtube.liveBroadcasts.list({
         auth: oauth2Client,
-        part: 'id',
-        channelId: channelId,
-        eventType: 'live',
-        type: 'video'
+        part: 'snippet,contentDetails',
+        broadcastStatus: 'active',
+        broadcastType: 'all'
       });
 
-      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+      console.log(`[BOT] Found ${broadcastResponse.data.items?.length || 0} active broadcasts`);
+      
+      let liveBroadcast = broadcastResponse.data.items?.find(item => 
+        item.snippet.channelId === channelId
+      );
+
+      if (liveBroadcast) {
+        console.log(`[BOT] Found active broadcast for channel ${channelId}`);
+      } else {
+        console.log(`[BOT] No broadcasts found, trying search API...`);
+        // Try search as backup
+        const searchResponse = await youtube.search.list({
+          auth: oauth2Client,
+          part: 'id,snippet',
+          channelId: channelId,
+          eventType: 'live',
+          type: 'video'
+        });
+
+        if (searchResponse.data.items && searchResponse.data.items.length > 0) {
+          console.log(`[BOT] Found live stream via search for channel ${channelId}`);
+          const videoId = searchResponse.data.items[0].id.videoId;
+          const videoResponse = await youtube.videos.list({
+            auth: oauth2Client,
+            part: 'liveStreamingDetails,snippet',
+            id: videoId
+          });
+
+          if (videoResponse.data.items && videoResponse.data.items.length > 0) {
+            liveBroadcast = {
+              snippet: {
+                liveChatId: videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId
+              }
+            };
+          }
+        }
+      }
+
+      if (liveBroadcast && liveBroadcast.snippet.liveChatId) {
+        if (!this.activeStreams.has(channelId)) {
+          console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
+          await this.startBot(channelId, true, liveBroadcast);
+        }
+      } else {
         console.log(`[BOT] No live stream found for channel: ${channelId}`);
         if (this.activeStreams.has(channelId)) {
           console.log(`[BOT] Stopping bot for channel: ${channelId}`);
           this.stopBot(channelId);
         }
-        return;
-      }
-
-      // Get live stream details
-      const videoId = searchResponse.data.items[0].id.videoId;
-      const videoResponse = await youtube.videos.list({
-        auth: oauth2Client,
-        part: 'liveStreamingDetails',
-        id: videoId
-      });
-
-      if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
-        console.log(`[BOT] Could not get live stream details for channel: ${channelId}`);
-        return;
-      }
-
-      const liveChatId = videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId;
-      
-      if (liveChatId && !this.activeStreams.has(channelId)) {
-        console.log(`[BOT] Found live stream for channel: ${channelId}`);
-        await this.startBot(channelId, true, { snippet: { liveChatId } });
       }
     } catch (err) {
       console.error(`[BOT] Error checking live for channel ${channelId}:`, err);
+      if (err.message?.includes('quota')) {
+        console.error('[BOT] YouTube API quota exceeded. Waiting for reset...');
+      }
     }
   }
 
