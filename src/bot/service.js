@@ -266,7 +266,7 @@ class BotService {
   async updateViewerStats(channelId, authorDetails) {
     try {
       const { channelId: viewerId, displayName } = authorDetails;
-      await Channel.findOneAndUpdate(
+      await Viewer.findOneAndUpdate(
         { channelId, viewerId },
         {
           channelId,
