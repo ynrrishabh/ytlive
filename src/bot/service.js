@@ -150,7 +150,9 @@ class BotService {
       console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
 
       // Start polling for messages every 3 seconds
-      const pollInterval = setInterval(() => this.pollChat(channelId), 3000);
+      const pollInterval = setInterval(() => {
+        this.pollChat(channelId);
+      }, 3000);
       this.pollIntervals.set(channelId, pollInterval);
 
       // Start points distribution every 10 minutes, aligned to clock
