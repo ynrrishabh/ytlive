@@ -83,57 +83,41 @@ class BotService {
 
       const youtube = google.youtube('v3');
       
-      // Try to get live broadcasts directly (includes unlisted)
-      console.log(`[BOT] Checking live broadcasts for channel ${channelId}...`);
-      const broadcastResponse = await youtube.liveBroadcasts.list({
+      // Search for live streams (works for both public and unlisted)
+      console.log(`[BOT] Searching for live streams on channel ${channelId}...`);
+      const searchResponse = await youtube.search.list({
         auth: oauth2Client,
-        part: 'snippet,contentDetails',
-        broadcastStatus: 'active',
-        broadcastType: 'all'
+        part: 'id,snippet',
+        channelId: channelId,
+        eventType: 'live',
+        type: 'video'
       });
 
-      console.log(`[BOT] Found ${broadcastResponse.data.items?.length || 0} active broadcasts`);
-      
-      let liveBroadcast = broadcastResponse.data.items?.find(item => 
-        item.snippet.channelId === channelId
-      );
-
-      if (liveBroadcast) {
-        console.log(`[BOT] Found active broadcast for channel ${channelId}`);
-      } else {
-        console.log(`[BOT] No broadcasts found, trying search API...`);
-        // Try search as backup
-        const searchResponse = await youtube.search.list({
+      if (searchResponse.data.items && searchResponse.data.items.length > 0) {
+        console.log(`[BOT] Found live stream for channel ${channelId}`);
+        const videoId = searchResponse.data.items[0].id.videoId;
+        
+        // Get live chat ID
+        const videoResponse = await youtube.videos.list({
           auth: oauth2Client,
-          part: 'id,snippet',
-          channelId: channelId,
-          eventType: 'live',
-          type: 'video'
+          part: 'liveStreamingDetails,snippet',
+          id: videoId
         });
 
-        if (searchResponse.data.items && searchResponse.data.items.length > 0) {
-          console.log(`[BOT] Found live stream via search for channel ${channelId}`);
-          const videoId = searchResponse.data.items[0].id.videoId;
-          const videoResponse = await youtube.videos.list({
-            auth: oauth2Client,
-            part: 'liveStreamingDetails,snippet',
-            id: videoId
-          });
-
-          if (videoResponse.data.items && videoResponse.data.items.length > 0) {
-            liveBroadcast = {
-              snippet: {
-                liveChatId: videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId
-              }
-            };
+        if (videoResponse.data.items && videoResponse.data.items.length > 0 && 
+            videoResponse.data.items[0].liveStreamingDetails?.activeLiveChatId) {
+          const liveBroadcast = {
+            snippet: {
+              liveChatId: videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId
+            }
+          };
+          
+          if (!this.activeStreams.has(channelId)) {
+            console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
+            await this.startBot(channelId, true, liveBroadcast);
           }
-        }
-      }
-
-      if (liveBroadcast && liveBroadcast.snippet.liveChatId) {
-        if (!this.activeStreams.has(channelId)) {
-          console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
-          await this.startBot(channelId, true, liveBroadcast);
+        } else {
+          console.log(`[BOT] Live stream found but no chat ID available for channel: ${channelId}`);
         }
       } else {
         console.log(`[BOT] No live stream found for channel: ${channelId}`);
