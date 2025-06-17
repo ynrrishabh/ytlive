@@ -15,6 +15,7 @@ class BotService {
     this.liveCheckTasks = new Map(); // channelId -> cron task
     this.lastMessageTimestamps = new Map(); // channelId -> timestamp
     this.pollIntervals = new Map(); // channelId -> pollInterval
+    this.gambleCooldowns = new Map(); // channelId:userId -> timestamp
     this.initBot();
   }
 
@@ -205,21 +206,19 @@ class BotService {
 
       const youtube = google.youtube('v3');
       
-      // If this is the first poll, only get the pageToken
+      // If this is the first poll, only get the pageToken and do NOT process any messages
       if (stream.firstPoll) {
         const response = await youtube.liveChatMessages.list({
           auth: oauth2Client,
           liveChatId: stream.liveChatId,
-          part: 'snippet',
-          maxResults: 1,  // Minimum possible to save quota
-          fields: 'nextPageToken'  // Only get the token
+          part: 'id', // Only need id to get nextPageToken
+          maxResults: 1,
+          fields: 'nextPageToken'
         });
-        
-        // Update stream with the token and mark first poll as done
         stream.nextPageToken = response.data.nextPageToken;
         stream.firstPoll = false;
         this.activeStreams.set(channelId, stream);
-        return;  // Skip processing messages on first poll
+        return; // Do not process any messages
       }
       
       // Normal poll for subsequent requests
@@ -368,12 +367,12 @@ class BotService {
       });
 
       if (!viewer) {
-        await this.sendMessage(channelId, `${author.displayName}, you haven't watched any streams yet!`);
+        await this.sendMessage(channelId, `${author.displayName} , you haven't watched any streams yet!`);
         return;
       }
 
       const hours = (viewer.watchMinutes / 60).toFixed(2);
-      await this.sendMessage(channelId, `${author.displayName}, you have watched for ${hours} hours!`);
+      await this.sendMessage(channelId, `${author.displayName} , you have watched for ${hours} hours!`);
     } catch (error) {
       console.error('[BOT] Error handling hours command:', error);
     }
@@ -427,6 +426,17 @@ class BotService {
 
   async handleGambleCommand(channelId, author, amount) {
     try {
+      // Cooldown check
+      const cooldownKey = `${channelId}:${author.channelId}`;
+      const now = Date.now();
+      const lastGamble = this.gambleCooldowns.get(cooldownKey);
+      if (lastGamble && now - lastGamble < 5 * 60 * 1000) {
+        // On cooldown, do not reply
+        return;
+      }
+      // Set cooldown
+      this.gambleCooldowns.set(cooldownKey, now);
+
       let points;
       const viewer = await Viewer.findOne({
         channelId,
@@ -504,21 +514,20 @@ class BotService {
         return;
       }
 
-      // Use Gemini 2.0 Flash for faster, concise responses
+      // Use Gemini 2.0 Flash for concise responses
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
-      // Add instruction for brief response
-      const prompt = `Please provide a brief, clear answer (maximum 150 characters) to: ${question}`;
+      // Add instruction for very brief response (max 180 chars)
+      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      let text = response.text();
       
-      // Ensure response fits YouTube chat limits
-      const maxLength = 150;
-      const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+      // Ensure response fits YouTube chat limits (max 180 for answer)
+      if (text.length > 180) text = text.substring(0, 180);
       
-      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, truncatedText);
-      await this.sendMessage(channelId, `${author.displayName} , ${truncatedText}`);
+      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
+      await this.sendMessage(channelId, `${author.displayName} , ${text}`);
       console.log(`[BOT] Sent AI response to ${author.displayName} in channel ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error handling ask command:', error);
