@@ -68,8 +68,13 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      const bot = await Bot.findOne({ botId: channelId });
-      if (!bot) return;
+      // Get bot credentials
+      const bot = await Bot.findOne({});
+      if (!bot) {
+        console.log(`[BOT] No bot credentials found. Please authenticate bot first.`);
+        return;
+      }
+
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
@@ -79,28 +84,45 @@ class BotService {
         access_token: bot.accessToken,
         refresh_token: bot.refreshToken
       });
+
       const youtube = google.youtube('v3');
-      const response = await youtube.liveBroadcasts.list({
+      
+      // First, search for live streams on the target channel
+      const searchResponse = await youtube.search.list({
         auth: oauth2Client,
-        part: 'snippet,contentDetails,status',
-        mine: true
+        part: 'id',
+        channelId: channelId,
+        eventType: 'live',
+        type: 'video'
       });
-      console.log('[BOT][DEBUG] liveBroadcasts.list response:', JSON.stringify(response.data.items, null, 2));
-      const liveBroadcast = response.data.items && response.data.items.find(
-        b => b.status && b.status.lifeCycleStatus === 'live'
-      );
-      if (liveBroadcast) {
-        if (!this.activeStreams.has(channelId)) {
-          console.log(`[BOT] Detected live stream for channel: ${channelId}`);
-          await this.startBot(channelId, true, liveBroadcast);
-        }
-      } else {
-        // Always log when checked, even if no live
-        console.log(`[BOT] Checked channel: ${channelId} - No live stream found.`);
+
+      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+        console.log(`[BOT] No live stream found for channel: ${channelId}`);
         if (this.activeStreams.has(channelId)) {
-          console.log(`[BOT] No active stream found for channel: ${channelId}, stopping bot.`);
+          console.log(`[BOT] Stopping bot for channel: ${channelId}`);
           this.stopBot(channelId);
         }
+        return;
+      }
+
+      // Get live stream details
+      const videoId = searchResponse.data.items[0].id.videoId;
+      const videoResponse = await youtube.videos.list({
+        auth: oauth2Client,
+        part: 'liveStreamingDetails',
+        id: videoId
+      });
+
+      if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
+        console.log(`[BOT] Could not get live stream details for channel: ${channelId}`);
+        return;
+      }
+
+      const liveChatId = videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId;
+      
+      if (liveChatId && !this.activeStreams.has(channelId)) {
+        console.log(`[BOT] Found live stream for channel: ${channelId}`);
+        await this.startBot(channelId, true, { snippet: { liveChatId } });
       }
     } catch (err) {
       console.error(`[BOT] Error checking live for channel ${channelId}:`, err);
@@ -109,8 +131,10 @@ class BotService {
 
   async startBot(channelId, fromLiveDetection = false, liveBroadcast = null) {
     try {
-      const bot = await Bot.findOne({ botId: channelId });
-      if (!bot) throw new Error('Bot not found');
+      // Get bot credentials
+      const bot = await Bot.findOne({});
+      if (!bot) throw new Error('Bot credentials not found');
+
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
@@ -120,39 +144,54 @@ class BotService {
         access_token: bot.accessToken,
         refresh_token: bot.refreshToken
       });
+
       const youtube = google.youtube('v3');
       let liveChatId;
+
       if (liveBroadcast) {
         liveChatId = liveBroadcast.snippet.liveChatId;
       } else {
-        const response = await youtube.liveBroadcasts.list({
+        // Search for live stream if not provided
+        const searchResponse = await youtube.search.list({
           auth: oauth2Client,
-          part: 'snippet,contentDetails,status',
-          mine: true
+          part: 'id',
+          channelId: channelId,
+          eventType: 'live',
+          type: 'video'
         });
-        const found = response.data.items && response.data.items.find(
-          b => b.status && b.status.lifeCycleStatus === 'live'
-        );
-        if (!found) {
+
+        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
           console.log(`[BOT] No active stream found for channel: ${channelId}`);
           return false;
         }
-        liveChatId = found.snippet.liveChatId;
+
+        const videoId = searchResponse.data.items[0].id.videoId;
+        const videoResponse = await youtube.videos.list({
+          auth: oauth2Client,
+          part: 'liveStreamingDetails',
+          id: videoId
+        });
+
+        if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
+          console.log(`[BOT] Could not get live stream details for channel: ${channelId}`);
+          return false;
+        }
+
+        liveChatId = videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId;
       }
+
       this.activeStreams.set(channelId, { liveChatId, nextPageToken: null });
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
+      
       // Start polling chat
       this.pollChat(channelId, oauth2Client);
-      // Setup auto message if enabled
-      const channel = await Channel.findOne({ channelId });
-      if (channel && channel.autoMessage && channel.autoMessage.enabled) {
-        this.setupAutoMessage(channelId, channel.autoMessage);
-      }
+      
       // If started from live detection, send "I am ON!" message
       if (fromLiveDetection) {
         await this.sendMessage(channelId, 'I am ON!');
         console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
       }
+      
       return true;
     } catch (error) {
       console.error('[BOT] Error starting bot:', error);
