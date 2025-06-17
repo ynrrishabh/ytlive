@@ -53,6 +53,11 @@ class BotService {
         console.log(`[BOT] Checking ${channels.length} channels for live streams...`);
         
         for (const channel of channels) {
+          // Skip check if channel is already being monitored
+          if (this.activeStreams.has(channel.channelId)) {
+            console.log(`[BOT] Channel ${channel.channelId} is already being monitored, skipping check...`);
+            continue;
+          }
           console.log(`[BOT] Checking if channel ${channel.channelId} is live...`);
           await this.checkAndStartLive(channel.channelId);
         }
@@ -247,6 +252,14 @@ class BotService {
         console.log('[BOT][DEBUG] Skipping message with missing snippet/displayMessage:', message);
         return;
       }
+
+      // Get bot info to check if message is from bot
+      const bot = await Bot.findOne({});
+      if (!bot || message.authorDetails.channelId === bot.botId) {
+        // Skip processing bot's own messages
+        return;
+      }
+
       // Update last message timestamp
       this.lastMessageTimestamps.set(channelId, Date.now());
       const { snippet, authorDetails } = message;
@@ -356,12 +369,19 @@ class BotService {
         await this.sendMessage(channelId, `${author.displayName}, please provide a question!`);
         return;
       }
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+      // Update Gemini model name to the correct one
+      const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
       const result = await model.generateContent(question);
       const response = await result.response;
       const text = response.text();
-      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
-      await this.sendMessage(channelId, `${author.displayName}, ${text}`);
+      
+      // Limit response length to avoid YouTube chat limits
+      const maxLength = 200;
+      const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+      
+      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, truncatedText);
+      await this.sendMessage(channelId, `${author.displayName}, ${truncatedText}`);
       console.log(`[BOT] Sent AI response to ${author.displayName} in channel ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error handling ask command:', error);
