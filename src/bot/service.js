@@ -149,7 +149,13 @@ class BotService {
   async startBot(channelId, liveChatId) {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
-      this.activeStreams.set(channelId, { liveChatId, nextPageToken: null });
+      
+      // Initialize with null nextPageToken - this will make the first poll get only the most recent messages
+      this.activeStreams.set(channelId, { 
+        liveChatId,
+        nextPageToken: null,
+        firstPoll: true  // Flag to handle first poll specially
+      });
       
       // Send initial message
       await this.sendMessage(channelId, 'I am ON!');
@@ -199,7 +205,24 @@ class BotService {
 
       const youtube = google.youtube('v3');
       
-      // Use fields parameter to minimize quota usage
+      // If this is the first poll, only get the pageToken
+      if (stream.firstPoll) {
+        const response = await youtube.liveChatMessages.list({
+          auth: oauth2Client,
+          liveChatId: stream.liveChatId,
+          part: 'snippet',
+          maxResults: 1,  // Minimum possible to save quota
+          fields: 'nextPageToken'  // Only get the token
+        });
+        
+        // Update stream with the token and mark first poll as done
+        stream.nextPageToken = response.data.nextPageToken;
+        stream.firstPoll = false;
+        this.activeStreams.set(channelId, stream);
+        return;  // Skip processing messages on first poll
+      }
+      
+      // Normal poll for subsequent requests
       const response = await youtube.liveChatMessages.list({
         auth: oauth2Client,
         liveChatId: stream.liveChatId,
