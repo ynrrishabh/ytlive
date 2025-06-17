@@ -143,7 +143,7 @@ class BotService {
   async startBot(channelId, liveChatId) {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
-      this.activeStreams.set(channelId, { liveChatId, lastMessageId: null });
+      this.activeStreams.set(channelId, { liveChatId, nextPageToken: null });
       
       // Send initial message
       await this.sendMessage(channelId, 'I am ON!');
@@ -167,6 +167,91 @@ class BotService {
 
     } catch (error) {
       console.error('[BOT] Error starting bot:', error);
+    }
+  }
+
+  async pollChat(channelId) {
+    const stream = this.activeStreams.get(channelId);
+    if (!stream) return;
+
+    try {
+      // Get bot credentials
+      const bot = await Bot.findOne({});
+      if (!bot) throw new Error('Bot credentials not found');
+
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+      oauth2Client.setCredentials({
+        access_token: bot.accessToken,
+        refresh_token: bot.refreshToken
+      });
+
+      const youtube = google.youtube('v3');
+      
+      // Use fields parameter to minimize quota usage
+      const response = await youtube.liveChatMessages.list({
+        auth: oauth2Client,
+        liveChatId: stream.liveChatId,
+        part: 'snippet,authorDetails',
+        pageToken: stream.nextPageToken,
+        fields: 'items(snippet(displayMessage),authorDetails(displayName,channelId)),nextPageToken'
+      });
+
+      stream.nextPageToken = response.data.nextPageToken;
+
+      // Process messages
+      for (const item of response.data.items) {
+        await this.processMessage(channelId, item);
+      }
+    } catch (error) {
+      console.error('[BOT] Error polling chat:', error);
+      // Don't stop polling on error, just log it
+    }
+  }
+
+  async processMessage(channelId, message) {
+    try {
+      if (!message || !message.snippet || !message.snippet.displayMessage) {
+        return;
+      }
+
+      // Get bot info to check if message is from bot
+      const bot = await Bot.findOne({});
+      if (!bot || message.authorDetails.channelId === bot.botId) {
+        // Skip processing bot's own messages
+        return;
+      }
+
+      // Update last message timestamp
+      this.lastMessageTimestamps.set(channelId, Date.now());
+      
+      const { snippet, authorDetails } = message;
+      const text = snippet.displayMessage.toLowerCase();
+
+      // Update viewer's last active time
+      await Viewer.findOneAndUpdate(
+        { channelId, viewerId: authorDetails.channelId },
+        {
+          channelId,
+          viewerId: authorDetails.channelId,
+          username: authorDetails.displayName,
+          lastActive: new Date()
+        },
+        { upsert: true }
+      );
+
+      // Handle commands
+      if (text.startsWith('!') || text.startsWith('/')) {
+        const [command, ...args] = text.slice(1).split(' ');
+        await this.handleCommand(channelId, authorDetails, command, args.join(' '));
+      }
+
+      console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
+    } catch (error) {
+      console.error('[BOT] Error processing message:', error);
     }
   }
 
