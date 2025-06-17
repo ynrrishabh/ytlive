@@ -370,14 +370,17 @@ class BotService {
         return;
       }
 
-      // Update Gemini model name to the correct one
-      const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
-      const result = await model.generateContent(question);
+      // Use Gemini 2.0 Flash for faster, concise responses
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      
+      // Add instruction for brief response
+      const prompt = `Please provide a brief, clear answer (maximum 150 characters) to: ${question}`;
+      const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
       
-      // Limit response length to avoid YouTube chat limits
-      const maxLength = 200;
+      // Ensure response fits YouTube chat limits
+      const maxLength = 150;
       const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
       
       console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, truncatedText);
