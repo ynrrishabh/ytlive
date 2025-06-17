@@ -2,6 +2,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const User = require('../models/User');
 const botService = require('../bot/service');
+const Bot = require('../models/Bot');
 const router = express.Router();
 
 const oauth2Client = new google.auth.OAuth2(
@@ -59,19 +60,18 @@ router.get('/callback', async (req, res) => {
       throw new Error('Channel ID is missing');
     }
     
-    // Save or update user
-    await User.findOneAndUpdate(
-      { channelId: channel.id },
+    // Save bot login data in the Bot model
+    await Bot.findOneAndUpdate(
+      { botId: channel.id },
       {
-        channelId: channel.id,
-        channelName: channel.snippet.title,
+        botId: channel.id,
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         tokenExpiry: new Date(tokens.expiry_date)
       },
       { upsert: true, new: true }
     );
-    console.log(`[AUTH] User authenticated: ${channel.snippet.title} (${channel.id})`);
+    console.log(`[AUTH] Bot authenticated: ${channel.snippet.title} (${channel.id})`);
 
     // Automatically start the bot for this channel
     const started = await botService.startBot(channel.id);

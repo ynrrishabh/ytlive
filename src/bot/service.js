@@ -3,6 +3,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const User = require('../models/User');
 const Viewer = require('../models/Viewer');
 const cron = require('node-cron');
+const Bot = require('../models/Bot');
+const Channel = require('../models/Channel');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -40,16 +42,16 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      const user = await User.findOne({ channelId });
-      if (!user) return;
+      const bot = await Bot.findOne({ botId: channelId });
+      if (!bot) return;
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
         process.env.GOOGLE_REDIRECT_URI
       );
       oauth2Client.setCredentials({
-        access_token: user.accessToken,
-        refresh_token: user.refreshToken
+        access_token: bot.accessToken,
+        refresh_token: bot.refreshToken
       });
       const youtube = google.youtube('v3');
       const response = await youtube.liveBroadcasts.list({
@@ -81,16 +83,16 @@ class BotService {
 
   async startBot(channelId, fromLiveDetection = false, liveBroadcast = null) {
     try {
-      const user = await User.findOne({ channelId });
-      if (!user) throw new Error('User not found');
+      const bot = await Bot.findOne({ botId: channelId });
+      if (!bot) throw new Error('Bot not found');
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
         process.env.GOOGLE_REDIRECT_URI
       );
       oauth2Client.setCredentials({
-        access_token: user.accessToken,
-        refresh_token: user.refreshToken
+        access_token: bot.accessToken,
+        refresh_token: bot.refreshToken
       });
       const youtube = google.youtube('v3');
       let liveChatId;
@@ -116,8 +118,9 @@ class BotService {
       // Start polling chat
       this.pollChat(channelId, oauth2Client);
       // Setup auto message if enabled
-      if (user.autoMessage.enabled) {
-        this.setupAutoMessage(channelId, user.autoMessage);
+      const channel = await Channel.findOne({ channelId });
+      if (channel && channel.autoMessage && channel.autoMessage.enabled) {
+        this.setupAutoMessage(channelId, channel.autoMessage);
       }
       // If started from live detection, send "I am ON!" message
       if (fromLiveDetection) {
@@ -193,7 +196,7 @@ class BotService {
   async updateViewerStats(channelId, authorDetails) {
     try {
       const { channelId: viewerId, displayName } = authorDetails;
-      await Viewer.findOneAndUpdate(
+      await Channel.findOneAndUpdate(
         { channelId, viewerId },
         {
           channelId,
@@ -300,15 +303,15 @@ class BotService {
     const stream = this.activeStreams.get(channelId);
     if (!stream) return;
     try {
-      const user = await User.findOne({ channelId });
+      const bot = await Bot.findOne({ botId: channelId });
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
         process.env.GOOGLE_REDIRECT_URI
       );
       oauth2Client.setCredentials({
-        access_token: user.accessToken,
-        refresh_token: user.refreshToken
+        access_token: bot.accessToken,
+        refresh_token: bot.refreshToken
       });
       const youtube = google.youtube('v3');
       console.log(`[BOT][DEBUG] Sending message to liveChatId for channel ${channelId}: ${stream.liveChatId}`);
