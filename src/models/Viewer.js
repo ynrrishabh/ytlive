@@ -31,7 +31,7 @@ const viewerSchema = new mongoose.Schema({
   }
 });
 
-// Compound index for efficient queries
+// Keep only this compound index
 viewerSchema.index({ channelId: 1, viewerId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Viewer', viewerSchema); 

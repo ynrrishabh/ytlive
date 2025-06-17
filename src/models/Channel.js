@@ -28,7 +28,4 @@ const channelSchema = new mongoose.Schema({
   }
 });
 
-// Ensure channelId is unique
-channelSchema.index({ channelId: 1 }, { unique: true });
-
 module.exports = mongoose.model('Channel', channelSchema); 

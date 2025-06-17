@@ -24,7 +24,4 @@ const botSchema = new mongoose.Schema({
   }
 });
 
-// Ensure botId is unique
-botSchema.index({ botId: 1 }, { unique: true });
-
 module.exports = mongoose.model('Bot', botSchema); 
