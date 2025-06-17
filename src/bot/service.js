@@ -14,6 +14,7 @@ class BotService {
     this.autoMessageTimers = new Map(); // channelId -> timer
     this.liveCheckTasks = new Map(); // channelId -> cron task
     this.lastMessageTimestamps = new Map(); // channelId -> timestamp
+    this.pollIntervals = new Map(); // channelId -> pollInterval
     this.initBot();
   }
 
@@ -119,7 +120,7 @@ class BotService {
           
           if (!this.activeStreams.has(channelId)) {
             console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
-            await this.startBot(channelId, true, liveBroadcast);
+            await this.startBot(channelId, liveBroadcast.snippet.liveChatId);
           }
         } else {
           console.log(`[BOT] Live stream found but no chat ID available for channel: ${channelId}`);
@@ -139,179 +140,90 @@ class BotService {
     }
   }
 
-  async startBot(channelId, fromLiveDetection = false, liveBroadcast = null) {
+  async startBot(channelId, liveChatId) {
     try {
-      // Get bot credentials
-      const bot = await Bot.findOne({});
-      if (!bot) throw new Error('Bot credentials not found');
-
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      oauth2Client.setCredentials({
-        access_token: bot.accessToken,
-        refresh_token: bot.refreshToken
-      });
-
-      const youtube = google.youtube('v3');
-      let liveChatId;
-
-      if (liveBroadcast) {
-        liveChatId = liveBroadcast.snippet.liveChatId;
-      } else {
-        // Search for live stream if not provided
-        const searchResponse = await youtube.search.list({
-          auth: oauth2Client,
-          part: 'id',
-          channelId: channelId,
-          eventType: 'live',
-          type: 'video'
-        });
-
-        if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
-          console.log(`[BOT] No active stream found for channel: ${channelId}`);
-          return false;
-        }
-
-        const videoId = searchResponse.data.items[0].id.videoId;
-        const videoResponse = await youtube.videos.list({
-          auth: oauth2Client,
-          part: 'liveStreamingDetails',
-          id: videoId
-        });
-
-        if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
-          console.log(`[BOT] Could not get live stream details for channel: ${channelId}`);
-          return false;
-        }
-
-        liveChatId = videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId;
-      }
-
-      this.activeStreams.set(channelId, { liveChatId, nextPageToken: null });
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
+      this.activeStreams.set(channelId, { liveChatId, lastMessageId: null });
       
-      // Start polling chat
-      this.pollChat(channelId, oauth2Client);
-      
-      // If started from live detection, send "I am ON!" message
-      if (fromLiveDetection) {
-        await this.sendMessage(channelId, 'I am ON!');
-        console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
-      }
-      
-      return true;
+      // Send initial message
+      await this.sendMessage(channelId, 'I am ON!');
+      console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
+
+      // Start polling for messages every 3 seconds
+      const pollInterval = setInterval(() => this.pollChat(channelId), 3000);
+      this.pollIntervals.set(channelId, pollInterval);
+
+      // Start points distribution every 10 minutes, aligned to clock
+      const now = new Date();
+      const minutesToNext10 = 10 - (now.getMinutes() % 10);
+      const msToNext10 = minutesToNext10 * 60 * 1000;
+
+      // Initial delay to align with 10-minute intervals
+      setTimeout(() => {
+        this.distributePoints(channelId);
+        // Then set up regular 10-minute interval
+        setInterval(() => this.distributePoints(channelId), 10 * 60 * 1000);
+      }, msToNext10);
+
     } catch (error) {
       console.error('[BOT] Error starting bot:', error);
-      return false;
     }
   }
 
-  async pollChat(channelId, oauth2Client, pollInterval = 3000, errorCount = 0) {
-    const stream = this.activeStreams.get(channelId);
-    if (!stream) return;
+  async distributePoints(channelId) {
     try {
-      const youtube = google.youtube('v3');
-      // Use fields to minimize quota usage
-      const response = await youtube.liveChatMessages.list({
-        auth: oauth2Client,
-        liveChatId: stream.liveChatId,
-        part: 'snippet,authorDetails',
-        pageToken: stream.nextPageToken,
-        fields: 'items(snippet(displayMessage),authorDetails(displayName,channelId)),nextPageToken,pollingIntervalMillis'
+      const now = new Date();
+      const tenMinutesAgo = new Date(now - 10 * 60 * 1000);
+
+      // Get all viewers who sent at least one message in the last 10 minutes
+      const activeViewers = await Viewer.find({
+        channelId,
+        lastActive: { $gte: tenMinutesAgo }
       });
-      stream.nextPageToken = response.data.nextPageToken;
-      // Process messages
-      let messageCount = 0;
-      for (const item of response.data.items) {
-        await this.processMessage(channelId, item);
-        messageCount++;
+
+      // Award points and update watch time
+      for (const viewer of activeViewers) {
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: viewer.viewerId },
+          { 
+            $inc: { 
+              points: 10,
+              watchMinutes: 10
+            }
+          }
+        );
+        console.log(`[BOT] Awarded 10 points and 10 minutes to ${viewer.username} in channel ${channelId}`);
       }
-      // Use YouTube's suggested polling interval if available
-      let nextInterval = response.data.pollingIntervalMillis || pollInterval;
-      // If no messages, increase interval up to 10s, else reset to 3s
-      if (messageCount === 0) {
-        nextInterval = Math.min(nextInterval + 1000, 10000);
-      } else {
-        nextInterval = 3000;
-      }
-      setTimeout(() => this.pollChat(channelId, oauth2Client, nextInterval, 0), nextInterval);
     } catch (error) {
-      console.error('[BOT] Error polling chat:', error);
-      // Exponential backoff on error, up to 60s
-      const nextInterval = Math.min(3000 * Math.pow(2, errorCount), 60000);
-      setTimeout(() => this.pollChat(channelId, oauth2Client, nextInterval, errorCount + 1), nextInterval);
+      console.error('[BOT] Error distributing points:', error);
     }
   }
 
-  async processMessage(channelId, message) {
+  async handleCommand(channelId, author, command, args) {
     try {
-      if (!message || !message.snippet || !message.snippet.displayMessage) {
-        console.log('[BOT][DEBUG] Skipping message with missing snippet/displayMessage:', message);
-        return;
-      }
-
-      // Get bot info to check if message is from bot
-      const bot = await Bot.findOne({});
-      if (!bot || message.authorDetails.channelId === bot.botId) {
-        // Skip processing bot's own messages
-        return;
-      }
-
-      // Update last message timestamp
-      this.lastMessageTimestamps.set(channelId, Date.now());
-      const { snippet, authorDetails } = message;
-      const text = snippet.displayMessage.toLowerCase();
-      // Update viewer stats
-      await this.updateViewerStats(channelId, authorDetails);
-      // Handle commands
-      if (text.startsWith('!') || text.startsWith('/')) {
-        await this.handleCommand(channelId, authorDetails, text);
-      }
-      console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
-    } catch (error) {
-      console.error('[BOT] Error processing message:', error);
-    }
-  }
-
-  async updateViewerStats(channelId, authorDetails) {
-    try {
-      const { channelId: viewerId, displayName } = authorDetails;
-      await Viewer.findOneAndUpdate(
-        { channelId, viewerId },
-        {
-          channelId,
-          viewerId,
-          username: displayName,
-          $inc: { points: 1, watchTime: 1 },
-          lastActive: new Date()
-        },
-        { upsert: true }
-      );
-      console.log(`[BOT] Updated stats for viewer ${displayName} (${viewerId}) in channel ${channelId}`);
-    } catch (error) {
-      console.error('[BOT] Error updating viewer stats:', error);
-    }
-  }
-
-  async handleCommand(channelId, author, text) {
-    try {
-      const [command, ...args] = text.slice(1).split(' ');
-      switch (command) {
+      switch (command.toLowerCase()) {
         case 'points':
           await this.handlePointsCommand(channelId, author);
           break;
-        case 'roll':
+        case 'hours':
+          await this.handleHoursCommand(channelId, author);
+          break;
+        case 'top':
+          await this.handleTopCommand(channelId);
+          break;
+        case 'tophours':
+          await this.handleTopHoursCommand(channelId);
+          break;
         case 'gamble':
-          await this.handleGambleCommand(channelId, author, args[0]);
+          await this.handleGambleCommand(channelId, author, args);
           break;
         case 'ask':
-          await this.handleAskCommand(channelId, author, args.join(' '));
+          await this.handleAskCommand(channelId, author, args);
+          break;
+        default:
+          // Unknown command
           break;
       }
-      console.log(`[BOT] Handled command '${command}' from ${author.displayName} in channel ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error handling command:', error);
     }
@@ -324,11 +236,77 @@ class BotService {
         viewerId: author.channelId
       });
       if (viewer) {
-        await this.sendMessage(channelId, `${author.displayName} has ${viewer.points} points and has watched for ${viewer.watchTime} minutes!`);
+        await this.sendMessage(channelId, `${author.displayName} has ${viewer.points} points and has watched for ${viewer.watchMinutes} minutes!`);
         console.log(`[BOT] Sent points message to ${author.displayName} in channel ${channelId}`);
       }
     } catch (error) {
       console.error('[BOT] Error handling points command:', error);
+    }
+  }
+
+  async handleHoursCommand(channelId, author) {
+    try {
+      const viewer = await Viewer.findOne({
+        channelId,
+        viewerId: author.channelId
+      });
+
+      if (!viewer) {
+        await this.sendMessage(channelId, `${author.displayName} , you haven't watched any streams yet!`);
+        return;
+      }
+
+      const hours = Math.floor(viewer.watchMinutes / 60);
+      const minutes = viewer.watchMinutes % 60;
+      await this.sendMessage(channelId, `${author.displayName} , you have watched for ${hours} hours and ${minutes} minutes!`);
+    } catch (error) {
+      console.error('[BOT] Error handling hours command:', error);
+    }
+  }
+
+  async handleTopCommand(channelId) {
+    try {
+      const topViewers = await Viewer.find({ channelId })
+        .sort({ points: -1 })
+        .limit(5);
+
+      if (!topViewers.length) {
+        await this.sendMessage(channelId, 'No viewers found!');
+        return;
+      }
+
+      const leaderboard = topViewers
+        .map((viewer, index) => `${index + 1}. ${viewer.username} (${viewer.points} points)`)
+        .join(' | ');
+
+      await this.sendMessage(channelId, `Top Points: ${leaderboard}`);
+    } catch (error) {
+      console.error('[BOT] Error handling top command:', error);
+    }
+  }
+
+  async handleTopHoursCommand(channelId) {
+    try {
+      const topViewers = await Viewer.find({ channelId })
+        .sort({ watchMinutes: -1 })
+        .limit(5);
+
+      if (!topViewers.length) {
+        await this.sendMessage(channelId, 'No viewers found!');
+        return;
+      }
+
+      const leaderboard = topViewers
+        .map((viewer, index) => {
+          const hours = Math.floor(viewer.watchMinutes / 60);
+          const minutes = viewer.watchMinutes % 60;
+          return `${index + 1}. ${viewer.username} (${hours}h ${minutes}m)`;
+        })
+        .join(' | ');
+
+      await this.sendMessage(channelId, `Top Watch Time: ${leaderboard}`);
+    } catch (error) {
+      console.error('[BOT] Error handling top hours command:', error);
     }
   }
 

@@ -17,9 +17,9 @@ const viewerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  watchTime: {
+  watchMinutes: {
     type: Number,
-    default: 0 // in minutes
+    default: 0
   },
   lastActive: {
     type: Date,
