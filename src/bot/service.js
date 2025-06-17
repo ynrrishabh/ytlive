@@ -46,27 +46,33 @@ class BotService {
 
   // Periodically check for live streams for all users
   initLiveDetection() {
-    // Run every 1 minute
-    cron.schedule('*/1 * * * *', async () => {
-      try {
-        console.log('[BOT] Running scheduled live check...');
-        const channels = await Channel.find({});
-        console.log(`[BOT] Checking ${channels.length} channels for live streams...`);
-        
-        for (const channel of channels) {
-          // Skip check if channel is already being monitored
-          if (this.activeStreams.has(channel.channelId)) {
-            console.log(`[BOT] Channel ${channel.channelId} is already being monitored, skipping check...`);
-            continue;
-          }
-          console.log(`[BOT] Checking if channel ${channel.channelId} is live...`);
-          await this.checkAndStartLive(channel.channelId);
-        }
-      } catch (err) {
-        console.error('[BOT] Error in live detection cron:', err);
+    // Initial check
+    this.checkLiveStatus();
+    
+    // Set up recurring check
+    this.liveCheckInterval = setInterval(async () => {
+      if (this.activeStreams.size === 0) {  // Only check if no active streams
+        await this.checkLiveStatus();
       }
-    });
-    console.log('[BOT] Live detection cron job started (every 1 minute)');
+    }, 5000);  // Check every 5 seconds
+    console.log('[BOT] Live detection started (every 5 seconds until live found)');
+  }
+
+  async checkLiveStatus() {
+    try {
+      const channels = await Channel.find({});
+      console.log(`[BOT] Checking ${channels.length} channels for live streams...`);
+      
+      for (const channel of channels) {
+        // Skip check if channel is already being monitored
+        if (this.activeStreams.has(channel.channelId)) {
+          continue;
+        }
+        await this.checkAndStartLive(channel.channelId);
+      }
+    } catch (err) {
+      console.error('[BOT] Error in live detection:', err);
+    }
   }
 
   async checkAndStartLive(channelId) {
@@ -323,7 +329,7 @@ class BotService {
         viewerId: author.channelId
       });
       if (viewer) {
-        await this.sendMessage(channelId, `${author.displayName} has ${viewer.points} points and has watched for ${viewer.watchMinutes} minutes!`);
+        await this.sendMessage(channelId, `${author.displayName} has ${viewer.points} points!`);
         console.log(`[BOT] Sent points message to ${author.displayName} in channel ${channelId}`);
       }
     } catch (error) {
@@ -339,13 +345,12 @@ class BotService {
       });
 
       if (!viewer) {
-        await this.sendMessage(channelId, `${author.displayName} , you haven't watched any streams yet!`);
+        await this.sendMessage(channelId, `${author.displayName}, you haven't watched any streams yet!`);
         return;
       }
 
-      const hours = Math.floor(viewer.watchMinutes / 60);
-      const minutes = viewer.watchMinutes % 60;
-      await this.sendMessage(channelId, `${author.displayName} , you have watched for ${hours} hours and ${minutes} minutes!`);
+      const hours = (viewer.watchMinutes / 60).toFixed(2);
+      await this.sendMessage(channelId, `${author.displayName}, you have watched for ${hours} hours!`);
     } catch (error) {
       console.error('[BOT] Error handling hours command:', error);
     }
