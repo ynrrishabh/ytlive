@@ -373,7 +373,13 @@ class BotService {
     const stream = this.activeStreams.get(channelId);
     if (!stream) return;
     try {
-      const bot = await Bot.findOne({ botId: channelId });
+      // Get the first (and only) bot instance since we only have one bot
+      const bot = await Bot.findOne({});
+      if (!bot) {
+        console.error('[BOT] No bot credentials found');
+        return;
+      }
+
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
