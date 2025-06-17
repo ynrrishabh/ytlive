@@ -16,6 +16,7 @@ class BotService {
     this.lastMessageTimestamps = new Map(); // channelId -> timestamp
     this.pollIntervals = new Map(); // channelId -> pollInterval
     this.gambleCooldowns = new Map(); // channelId:userId -> timestamp
+    this.askCooldowns = new Map(); // channelId:userId -> timestamp for /ask cooldown
     this.initBot();
   }
 
@@ -162,10 +163,10 @@ class BotService {
       await this.sendMessage(channelId, 'I am ON!');
       console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
 
-      // Start polling for messages every 3 seconds
+      // Start polling for messages every 4 seconds
       const pollInterval = setInterval(() => {
         this.pollChat(channelId);
-      }, 3000);
+      }, 4000);
       this.pollIntervals.set(channelId, pollInterval);
 
       // Start points distribution every 10 minutes, aligned to clock
@@ -206,7 +207,7 @@ class BotService {
 
       const youtube = google.youtube('v3');
       
-      // If this is the first poll, only get the pageToken and do NOT process any messages
+      // If this is the first poll, only get the pageToken and do NOT process or print any messages
       if (stream.firstPoll) {
         const response = await youtube.liveChatMessages.list({
           auth: oauth2Client,
@@ -218,7 +219,8 @@ class BotService {
         stream.nextPageToken = response.data.nextPageToken;
         stream.firstPoll = false;
         this.activeStreams.set(channelId, stream);
-        return; // Do not process any messages
+        // Do not print or process any messages on first poll
+        return;
       }
       
       // Normal poll for subsequent requests
@@ -502,6 +504,18 @@ class BotService {
 
   async handleAskCommand(channelId, author, question) {
     try {
+      // Cooldown check for /ask
+      const cooldownKey = `${channelId}:${author.channelId}`;
+      const now = Date.now();
+      const lastAsk = this.askCooldowns.get(cooldownKey);
+      if (lastAsk && now - lastAsk < 60 * 1000) {
+        // On cooldown, do not reply
+        console.log(`[BOT] Ignored /ask from ${author.displayName} in channel ${channelId} due to 1 min cooldown.`);
+        return;
+      }
+      // Set cooldown
+      this.askCooldowns.set(cooldownKey, now);
+
       if (!question) {
         await this.sendMessage(channelId, `${author.displayName} , please provide a question!`);
         return;
