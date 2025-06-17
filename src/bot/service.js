@@ -334,30 +334,64 @@ class BotService {
 
   async handleGambleCommand(channelId, author, amount) {
     try {
-      const points = parseInt(amount);
-      if (isNaN(points) || points <= 0) {
-        await this.sendMessage(channelId, `${author.displayName}, please specify a valid amount of points to gamble!`);
-        return;
-      }
+      let points;
       const viewer = await Viewer.findOne({
         channelId,
         viewerId: author.channelId
       });
-      if (!viewer || viewer.points < points) {
-        await this.sendMessage(channelId, `${author.displayName}, you don't have enough points!`);
+
+      if (!viewer) {
+        await this.sendMessage(channelId, `${author.displayName} , you don't have any points to gamble!`);
         return;
       }
-      const win = Math.random() > 0.5;
-      const pointsChange = win ? points : -points;
+
+      // Handle "all" command
+      if (amount && amount.toLowerCase() === 'all') {
+        points = viewer.points;
+      } else {
+        points = parseInt(amount);
+      }
+
+      if (isNaN(points) || points <= 0) {
+        await this.sendMessage(channelId, `${author.displayName} , please specify a valid amount of points to gamble!`);
+        return;
+      }
+
+      if (viewer.points < points) {
+        await this.sendMessage(channelId, `${author.displayName} , you don't have enough points!`);
+        return;
+      }
+
+      // Generate random number between 1-100
+      const roll = Math.floor(Math.random() * 100) + 1;
+      let multiplier = 0;
+      let resultMessage = '';
+
+      // Determine multiplier based on roll
+      if (roll <= 40) {
+        multiplier = -1; // Lose
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you lost ${points} points!`;
+      } else if (roll <= 90) {
+        multiplier = 2; // 2x
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (2x)`;
+      } else if (roll <= 99) {
+        multiplier = 3; // 3x
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (3x)`;
+      } else {
+        multiplier = 10; // 10x
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (10x JACKPOT!)`;
+      }
+
+      // Calculate point change (subtract original bet and add winnings)
+      const pointsChange = points * (multiplier - 1);
+      
       await Viewer.findOneAndUpdate(
         { channelId, viewerId: author.channelId },
         { $inc: { points: pointsChange } }
       );
-      await this.sendMessage(
-        channelId,
-        `${author.displayName} ${win ? 'won' : 'lost'} ${points} points!`
-      );
-      console.log(`[BOT] Processed gamble for ${author.displayName} in channel ${channelId}: ${win ? 'won' : 'lost'} ${points}`);
+
+      await this.sendMessage(channelId, resultMessage);
+      console.log(`[BOT] Processed gamble for ${author.displayName} in channel ${channelId}: ${resultMessage}`);
     } catch (error) {
       console.error('[BOT] Error handling gamble command:', error);
     }
@@ -366,7 +400,14 @@ class BotService {
   async handleAskCommand(channelId, author, question) {
     try {
       if (!question) {
-        await this.sendMessage(channelId, `${author.displayName}, please provide a question!`);
+        await this.sendMessage(channelId, `${author.displayName} , please provide a question!`);
+        return;
+      }
+
+      // Get bot info to check if message is from bot
+      const bot = await Bot.findOne({});
+      if (!bot || author.channelId === bot.botId) {
+        // Skip processing bot's own messages
         return;
       }
 
@@ -384,11 +425,11 @@ class BotService {
       const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
       
       console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, truncatedText);
-      await this.sendMessage(channelId, `${author.displayName}, ${truncatedText}`);
+      await this.sendMessage(channelId, `${author.displayName} , ${truncatedText}`);
       console.log(`[BOT] Sent AI response to ${author.displayName} in channel ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error handling ask command:', error);
-      await this.sendMessage(channelId, `${author.displayName}, sorry, I couldn't process your question.`);
+      await this.sendMessage(channelId, `${author.displayName} , sorry, I couldn't process your question.`);
     }
   }
 
