@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 const authRoutes = require('./auth/routes');
 const botRoutes = require('./bot/routes');
 
@@ -10,6 +11,7 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
@@ -20,13 +22,14 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/auth', authRoutes);
 app.use('/bot', botRoutes);
 
-// Root route - simple status
+// Root route - redirect to setup page
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'YouTube Live Chat Bot API',
-    status: 'running',
-    setup: 'Check console logs for OAuth setup instructions'
-  });
+  res.redirect('/setup.html');
+});
+
+// Setup page route
+app.get('/setup', (req, res) => {
+  res.redirect('/setup.html');
 });
 
 // Health check endpoint

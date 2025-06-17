@@ -140,4 +140,21 @@ router.get('/leaderboard/:channelId', async (req, res) => {
   }
 });
 
+// Get project status and OAuth setup URLs
+router.get('/setup', async (req, res) => {
+  try {
+    const status = await projectService.getProjectStatus();
+    const oauthUrls = projectService.generateOAuthUrls();
+    
+    res.json({
+      status,
+      oauthUrls,
+      message: `${status.configured}/${status.total} bot logins found. Please setup OAuth accounts:`
+    });
+  } catch (error) {
+    console.error('Error getting setup info:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router; 

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Live Chat Bot Setup</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .status.info {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #1976d2;
+        }
+        .status.success {
+            background-color: #e8f5e8;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+        .status.warning {
+            background-color: #fff3e0;
+            border: 1px solid #ff9800;
+            color: #f57c00;
+        }
+        .oauth-link {
+            display: inline-block;
+            background-color: #4285f4;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 5px;
+            transition: background-color 0.3s;
+        }
+        .oauth-link:hover {
+            background-color: #3367d6;
+        }
+        .oauth-link.completed {
+            background-color: #4caf50;
+        }
+        .oauth-link.completed:hover {
+            background-color: #45a049;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .bot-status {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .refresh-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .refresh-btn:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Live Chat Bot Setup</h1>
+        
+        <div id="status" class="status info">
+            Loading setup status...
+        </div>
+        
+        <div id="setup-steps" style="display: none;">
+            <div class="step">
+                <h3>Step 1: Configure OAuth Accounts</h3>
+                <p>Click the links below to authorize the bot for each Google Cloud project. This allows the bot to send messages in your YouTube live chat.</p>
+                <div id="oauth-links"></div>
+            </div>
+            
+            <div class="step">
+                <h3>Step 2: Bot Status</h3>
+                <div id="bot-status" class="bot-status">
+                    Loading bot status...
+                </div>
+            </div>
+        </div>
+        
+        <button id="refresh-btn" class="refresh-btn" onclick="loadSetupStatus()">Refresh Status</button>
+    </div>
+
+    <script>
+        async function loadSetupStatus() {
+            try {
+                const response = await fetch('/bot/setup');
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('status');
+                const setupSteps = document.getElementById('setup-steps');
+                const oauthLinks = document.getElementById('oauth-links');
+                
+                // Update status message
+                statusDiv.textContent = data.message;
+                statusDiv.className = 'status ' + (data.status.configured === data.status.total ? 'success' : 'info');
+                
+                // Show/hide setup steps
+                if (data.status.total > 0) {
+                    setupSteps.style.display = 'block';
+                    
+                    // Generate OAuth links
+                    oauthLinks.innerHTML = '';
+                    data.oauthUrls.forEach((oauth, index) => {
+                        const link = document.createElement('a');
+                        link.href = oauth.url;
+                        link.className = 'oauth-link';
+                        link.textContent = `Setup OAuth ${index + 1} (${oauth.projectId})`;
+                        link.target = '_blank';
+                        oauthLinks.appendChild(link);
+                    });
+                    
+                    // Show completed projects
+                    data.status.projects.forEach(project => {
+                        if (project.configured) {
+                            const completedDiv = document.createElement('div');
+                            completedDiv.className = 'status success';
+                            completedDiv.textContent = `✅ ${project.projectId} - OAuth configured`;
+                            oauthLinks.appendChild(completedDiv);
+                        }
+                    });
+                }
+                
+                // Load bot status
+                loadBotStatus();
+                
+            } catch (error) {
+                console.error('Error loading setup status:', error);
+                document.getElementById('status').textContent = 'Error loading setup status. Please try again.';
+                document.getElementById('status').className = 'status warning';
+            }
+        }
+        
+        async function loadBotStatus() {
+            try {
+                const response = await fetch('/bot/status');
+                const data = await response.json();
+                
+                const botStatusDiv = document.getElementById('bot-status');
+                botStatusDiv.innerHTML = `
+                    <strong>Bot Status:</strong><br>
+                    Initialized: ${data.bot.isInitialized ? '✅ Yes' : '❌ No'}<br>
+                    Active Streams: ${data.bot.activeStreams}<br>
+                    Active Channels: ${data.bot.channels.join(', ') || 'None'}
+                `;
+                
+            } catch (error) {
+                console.error('Error loading bot status:', error);
+                document.getElementById('bot-status').innerHTML = 'Error loading bot status';
+            }
+        }
+        
+        // Load status on page load
+        loadSetupStatus();
+        
+        // Check for OAuth callback
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('code') && urlParams.get('state')) {
+            // This is an OAuth callback
+            handleOAuthCallback(urlParams.get('code'), urlParams.get('state'));
+        }
+        
+        async function handleOAuthCallback(code, projectId) {
+            try {
+                const response = await fetch(`/bot/oauth/callback?code=${code}&state=${projectId}`);
+                const data = await response.json();
+                
+                if (data.message) {
+                    alert(data.message);
+                }
+                
+                // Reload setup status
+                loadSetupStatus();
+                
+            } catch (error) {
+                console.error('Error handling OAuth callback:', error);
+                alert('OAuth setup failed. Please try again.');
+            }
+        }
+    </script>
+</body>
+</html> 
