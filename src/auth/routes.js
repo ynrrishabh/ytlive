@@ -60,7 +60,7 @@ router.get('/callback', async (req, res) => {
       throw new Error('Channel ID is missing');
     }
     
-    // Save bot login data in the Bot model
+    // Save bot credentials
     await Bot.findOneAndUpdate(
       { botId: channel.id },
       {
@@ -73,16 +73,11 @@ router.get('/callback', async (req, res) => {
     );
     console.log(`[AUTH] Bot authenticated: ${channel.snippet.title} (${channel.id})`);
 
-    // Automatically start the bot for this channel
-    const started = await botService.startBot(channel.id);
-    if (started) {
-      console.log(`[BOT] Started automatically for channel: ${channel.snippet.title} (${channel.id})`);
-    } else {
-      console.error(`[BOT] Failed to start for channel: ${channel.snippet.title} (${channel.id})`);
-    }
+    // Restart bot service to use new credentials
+    await botService.initBot();
 
     // Redirect to a simple success message
-    res.send('<h1>Success!</h1><p>Your YouTube account has been connected and the bot is now active. You can now close this window.</p>');
+    res.send('<h1>Success!</h1><p>Bot has been authenticated and started monitoring channels. You can now close this window.</p>');
   } catch (error) {
     console.error('Auth callback error:', error);
     res.send(`<h1>Error</h1><p>Authentication failed: ${error.message}</p><p>Please try again.</p>`);

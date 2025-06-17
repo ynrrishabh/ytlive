@@ -14,7 +14,33 @@ class BotService {
     this.autoMessageTimers = new Map(); // channelId -> timer
     this.liveCheckTasks = new Map(); // channelId -> cron task
     this.lastMessageTimestamps = new Map(); // channelId -> timestamp
-    this.initLiveDetection();
+    this.initBot();
+  }
+
+  async initBot() {
+    try {
+      // Get bot credentials
+      const bot = await Bot.findOne({});
+      if (!bot) {
+        console.log('[BOT] No bot credentials found. Please authenticate bot first.');
+        return;
+      }
+
+      // Get all channels to monitor
+      const channels = await Channel.find({});
+      console.log(`[BOT] Found ${channels.length} channels to monitor`);
+
+      // Start monitoring each channel
+      for (const channel of channels) {
+        console.log(`[BOT] Starting monitoring for channel: ${channel.channelId}`);
+        this.checkAndStartLive(channel.channelId);
+      }
+
+      // Start cron job for continuous monitoring
+      this.initLiveDetection();
+    } catch (error) {
+      console.error('[BOT] Error initializing bot:', error);
+    }
   }
 
   // Periodically check for live streams for all users
