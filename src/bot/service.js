@@ -131,29 +131,40 @@ class BotService {
     }
   }
 
-  async pollChat(channelId, oauth2Client) {
+  async pollChat(channelId, oauth2Client, pollInterval = 3000, errorCount = 0) {
     const stream = this.activeStreams.get(channelId);
     if (!stream) return;
     try {
       const youtube = google.youtube('v3');
-      console.log(`[BOT][DEBUG] Polling liveChatId for channel ${channelId}: ${stream.liveChatId}`);
+      // Use fields to minimize quota usage
       const response = await youtube.liveChatMessages.list({
         auth: oauth2Client,
         liveChatId: stream.liveChatId,
-        part: 'snippet',
-        pageToken: stream.nextPageToken
+        part: 'snippet,authorDetails',
+        pageToken: stream.nextPageToken,
+        fields: 'items(snippet(displayMessage),authorDetails(displayName,channelId)),nextPageToken,pollingIntervalMillis'
       });
-      console.log(`[BOT][DEBUG] liveChatMessages.list response for channel ${channelId}:`, JSON.stringify(response.data.items, null, 2));
       stream.nextPageToken = response.data.nextPageToken;
       // Process messages
+      let messageCount = 0;
       for (const item of response.data.items) {
         await this.processMessage(channelId, item);
+        messageCount++;
       }
-      // Schedule next poll
-      setTimeout(() => this.pollChat(channelId, oauth2Client), 3000);
+      // Use YouTube's suggested polling interval if available
+      let nextInterval = response.data.pollingIntervalMillis || pollInterval;
+      // If no messages, increase interval up to 10s, else reset to 3s
+      if (messageCount === 0) {
+        nextInterval = Math.min(nextInterval + 1000, 10000);
+      } else {
+        nextInterval = 3000;
+      }
+      setTimeout(() => this.pollChat(channelId, oauth2Client, nextInterval, 0), nextInterval);
     } catch (error) {
       console.error('[BOT] Error polling chat:', error);
-      this.activeStreams.delete(channelId);
+      // Exponential backoff on error, up to 60s
+      const nextInterval = Math.min(3000 * Math.pow(2, errorCount), 60000);
+      setTimeout(() => this.pollChat(channelId, oauth2Client, nextInterval, errorCount + 1), nextInterval);
     }
   }
 
@@ -324,8 +335,14 @@ class BotService {
     if (this.autoMessageTimers.has(channelId)) {
       clearInterval(this.autoMessageTimers.get(channelId));
     }
-    const timer = setInterval(() => {
-      this.sendMessage(channelId, text);
+    const timer = setInterval(async () => {
+      // Only send auto-message if there was chat activity in the last 10 minutes
+      const lastMsg = this.lastMessageTimestamps.get(channelId);
+      if (!lastMsg || Date.now() - lastMsg > 10 * 60 * 1000) {
+        console.log(`[BOT] Skipping auto-message for channel: ${channelId} due to inactivity.`);
+        return;
+      }
+      await this.sendMessage(channelId, text);
     }, interval * 60 * 1000);
     this.autoMessageTimers.set(channelId, timer);
     console.log(`[BOT] Auto message set up for channel: ${channelId} every ${interval} minutes`);
