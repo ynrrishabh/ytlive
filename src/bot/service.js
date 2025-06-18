@@ -562,6 +562,20 @@ class BotService {
         return;
       }
 
+      // Custom response for bot identity/creator questions
+      const q = question.trim().toLowerCase();
+      if (
+        q === 'who are you' ||
+        q === 'who made you' ||
+        q === 'who is your creator' ||
+        q.includes('your creator') ||
+        q.includes('who created you') ||
+        q.includes('who built you')
+      ) {
+        await this.sendMessage(channelId, `${author.displayName} , I am Mitshuri, made by Rishabh with his love ❤️🤖`);
+        return;
+      }
+
       // Get current project to check if message is from bot
       const { project } = await projectService.getYouTubeOAuthClient();
       const botChannelId = project.oauthTokens?.access_token ? 
