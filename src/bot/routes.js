@@ -171,4 +171,10 @@ router.post('/check-live', async (req, res) => {
   }
 });
 
+// Resume bot endpoint
+router.post('/resume', (req, res) => {
+  botService.resumeBot();
+  res.json({ success: true, message: 'Bot resumed.' });
+});
+
 module.exports = router; 

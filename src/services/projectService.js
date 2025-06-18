@@ -45,7 +45,7 @@ class ProjectService {
   async loadProjects() {
     try {
       this.projects = await Project.find({ isActive: true }).sort({ priority: 1 });
-      console.log(`[PROJECT] Loaded ${this.projects.length} active projects`);
+      // console.log(`[PROJECT] Loaded ${this.projects.length} active projects`);
     } catch (error) {
       console.error('[PROJECT] Error loading projects:', error);
       throw error;

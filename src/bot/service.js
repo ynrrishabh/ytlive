@@ -16,10 +16,12 @@ class BotService {
     this.gambleCooldowns = new Map(); // channelId:userId -> timestamp
     this.askCooldowns = new Map(); // channelId:userId -> timestamp for /ask cooldown
     this.isInitialized = false;
+    this.paused = false; // Add paused flag
     this.initBot();
   }
 
   async initBot() {
+    if (this.paused) return; // Prevent init if paused
     try {
       // Initialize projects first
       const projectStatus = await projectService.initializeProjects();
@@ -138,11 +140,14 @@ class BotService {
       console.error(`[BOT] Error checking live for channel ${channelId}:`, err);
       if (err.message?.includes('quota')) {
         console.error('[BOT] YouTube API quota exceeded. Switching to next project...');
-        // Mark current project as quota exceeded and retry
         const { project } = await projectService.getYouTubeOAuthClient();
         await projectService.markQuotaExceeded(project.projectId);
-        // Retry with next project
         setTimeout(() => this.checkAndStartLive(channelId), 1000);
+      }
+      if (err.response && err.response.status === 403) {
+        console.error('[BOT] Received 403 Forbidden from YouTube API. Stopping bot for this channel.');
+        this.stopBot(channelId);
+        return;
       }
     }
   }
@@ -230,6 +235,11 @@ class BotService {
         console.error('[BOT] YouTube API quota exceeded during chat polling. Switching to next project...');
         const { project } = await projectService.getYouTubeOAuthClient();
         await projectService.markQuotaExceeded(project.projectId);
+      }
+      if (error.response && error.response.status === 403) {
+        console.error('[BOT] Received 403 Forbidden from YouTube API during chat polling. Stopping bot for this channel.');
+        this.stopBot(channelId);
+        return;
       }
       // Don't stop polling on error, just log it
     }
@@ -671,6 +681,22 @@ class BotService {
       this.pollIntervals.delete(channelId);
     }
     console.log(`[BOT] Stopped for channel: ${channelId}`);
+  }
+
+  pauseBot() {
+    this.paused = true;
+    // Stop all polling and timers
+    for (const [channelId] of this.activeStreams) {
+      this.stopBot(channelId);
+    }
+    console.log('[BOT] Bot is now paused. Waiting for user to resume from web UI.');
+  }
+
+  resumeBot() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.initBot();
+    console.log('[BOT] Bot resumed by user.');
   }
 }
 

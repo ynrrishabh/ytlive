@@ -140,6 +140,10 @@
             <button id="check-live-btn" class="button check-live">Check for Live Streams</button>
             <div id="check-live-status"></div>
         </div>
+        <div style="margin-top: 20px;">
+            <button id="resume-bot-btn" class="button">Resume Bot</button>
+            <div id="resume-bot-status"></div>
+        </div>
     </div>
 
     <script>
@@ -270,6 +274,28 @@
         
         // Add click handler for check live button
         document.getElementById('check-live-btn').addEventListener('click', checkLive);
+
+        async function resumeBot() {
+            const button = document.getElementById('resume-bot-btn');
+            const statusDiv = document.getElementById('resume-bot-status');
+            try {
+                button.disabled = true;
+                statusDiv.textContent = 'Resuming bot...';
+                const response = await fetch('/bot/resume', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    statusDiv.textContent = '✅ ' + data.message;
+                } else {
+                    statusDiv.textContent = '❌ Failed to resume bot.';
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ Error resuming bot.';
+                console.error('Error:', error);
+            } finally {
+                button.disabled = false;
+            }
+        }
+        document.getElementById('resume-bot-btn').addEventListener('click', resumeBot);
     </script>
 </body>
 </html> 
