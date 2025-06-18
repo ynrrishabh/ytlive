@@ -85,6 +85,30 @@
         .refresh-btn:hover {
             background-color: #5a6268;
         }
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .button.check-live {
+            background-color: #007bff;
+        }
+        #check-live-status {
+            margin-top: 10px;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -111,6 +135,11 @@
         </div>
         
         <button id="refresh-btn" class="refresh-btn" onclick="loadSetupStatus()">Refresh Status</button>
+        
+        <div style="margin-top: 20px;">
+            <button id="check-live-btn" class="button check-live">Check for Live Streams</button>
+            <div id="check-live-status"></div>
+        </div>
     </div>
 
     <script>
@@ -209,6 +238,38 @@
                 alert('OAuth setup failed. Please try again.');
             }
         }
+
+        async function checkLive() {
+            const button = document.getElementById('check-live-btn');
+            const statusDiv = document.getElementById('check-live-status');
+            
+            try {
+                button.disabled = true;
+                statusDiv.textContent = 'Checking for live streams...';
+                
+                const response = await fetch('/bot/check-live', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusDiv.textContent = '✅ ' + data.message;
+                } else {
+                    statusDiv.textContent = '❌ ' + data.message;
+                }
+                
+                // Refresh bot status after check
+                loadBotStatus();
+            } catch (error) {
+                statusDiv.textContent = '❌ Error checking for live streams';
+                console.error('Error:', error);
+            } finally {
+                button.disabled = false;
+            }
+        }
+        
+        // Add click handler for check live button
+        document.getElementById('check-live-btn').addEventListener('click', checkLive);
     </script>
 </body>
 </html> 

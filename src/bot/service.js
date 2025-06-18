@@ -31,7 +31,8 @@ class BotService {
       }
       
       if (projectStatus.configured < projectStatus.total) {
-        console.log(`[BOT] ${projectStatus.configured}/${projectStatus.total} OAuth accounts configured. Bot will start with available accounts.`);
+        console.log(`[BOT] ${projectStatus.configured}/${projectStatus.total} OAuth accounts configured. Waiting for all accounts to be configured before starting.`);
+        return;
       }
 
       // Get all channels to monitor
@@ -63,16 +64,7 @@ class BotService {
 
   // Periodically check for live streams for all users
   initLiveDetection() {
-    // Initial check
-    this.checkLiveStatus();
-    
-    // Set up recurring check
-    this.liveCheckInterval = setInterval(async () => {
-      if (this.activeStreams.size === 0) {  // Only check if no active streams
-        await this.checkLiveStatus();
-      }
-    }, 5000);  // Check every 5 seconds
-    console.log('[BOT] Live detection started (every 5 seconds until live found)');
+    console.log('[BOT] Live detection initialized. Use manual check button to search for live streams.');
   }
 
   async checkLiveStatus() {
@@ -87,8 +79,10 @@ class BotService {
         }
         await this.checkAndStartLive(channel.channelId);
       }
+      return { success: true, message: 'Live check completed.' };
     } catch (err) {
       console.error('[BOT] Error in live detection:', err);
+      return { success: false, message: 'Error checking for live streams: ' + err.message };
     }
   }
 
@@ -165,7 +159,7 @@ class BotService {
       });
       
       // Send initial message
-      await this.sendMessage(channelId, 'I am ON!');
+      await this.sendMessage(channelId, 'I am ON! command list: /points ,/hours ,/top ,/tophours ,/gamble ,/ask');
       console.log(`[BOT] Sent 'I am ON!' message to channel: ${channelId}`);
 
       // Start polling for messages every 4 seconds
@@ -276,7 +270,7 @@ class BotService {
       );
 
       // Handle commands
-      if (text.startsWith('!') || text.startsWith('/')) {
+      if (text.startsWith('/')) {
         const [command, ...args] = text.slice(1).split(' ');
         await this.handleCommand(channelId, authorDetails, command, args.join(' '));
       }
@@ -483,7 +477,7 @@ class BotService {
 
       // Handle "all" command
       if (amount && amount.toLowerCase() === 'all') {
-        points = viewer.points;
+        points = Math.min(viewer.points, 3000); // Cap at 3000
       } else {
         points = parseInt(amount);
       }
@@ -504,27 +498,43 @@ class BotService {
       let resultMessage = '';
 
       // Determine multiplier based on roll
+      let emoji = '';
       if (roll <= 40) {
         multiplier = -1; // Lose
-        resultMessage = `Rolled ${roll}, ${author.displayName} , you lost ${points} points!`;
+        emoji = '😢';
       } else if (roll <= 90) {
         multiplier = 2; // 2x
-        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (2x)`;
+        emoji = '🎉';
       } else if (roll <= 99) {
         multiplier = 3; // 3x
-        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (3x)`;
+        emoji = '🔥';
       } else {
         multiplier = 10; // 10x
-        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (10x JACKPOT!)`;
+        emoji = '💎🥳';
       }
 
       // Calculate point change (subtract original bet and add winnings)
-      const pointsChange = points * (multiplier - 1);
-      
+      let pointsChange = points * (multiplier - 1);
+      let newPoints = viewer.points + pointsChange;
+      if (newPoints < 0) {
+        pointsChange = -viewer.points; // Set to zero, can't go negative
+        newPoints = 0;
+      }
       await Viewer.findOneAndUpdate(
         { channelId, viewerId: author.channelId },
         { $inc: { points: pointsChange } }
       );
+
+      // Build result message with new balance and emoji
+      if (multiplier === -1) {
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you lost ${points} points! ${emoji} >>> (Balance: ${newPoints})`;
+      } else if (multiplier === 2) {
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (2x) ${emoji} >>> (Balance: ${newPoints})`;
+      } else if (multiplier === 3) {
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (3x) ${emoji} >>> (Balance: ${newPoints})`;
+      } else if (multiplier === 10) {
+        resultMessage = `Rolled ${roll}, ${author.displayName} , you won ${points * (multiplier - 1)} points! (10x JACKPOT!) ${emoji} >>> (Balance: ${newPoints})`;
+      }
 
       await this.sendMessage(channelId, resultMessage);
       console.log(`[BOT] Processed gamble for ${author.displayName} in channel ${channelId}: ${resultMessage}`);

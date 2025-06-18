@@ -157,4 +157,18 @@ router.get('/setup', async (req, res) => {
   }
 });
 
+// Manual live check endpoint
+router.post('/check-live', async (req, res) => {
+  try {
+    const result = await botService.checkLiveStatus();
+    res.json(result);
+  } catch (error) {
+    console.error('Error in manual live check:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error performing live check: ' + error.message 
+    });
+  }
+});
+
 module.exports = router; 
