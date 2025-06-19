@@ -32,6 +32,10 @@ const viewerSchema = new mongoose.Schema({
   isAdmin: {
     type: Boolean,
     default: false
+  },
+  welcomeMessage: {
+    type: Boolean,
+    default: false
   }
 });
 

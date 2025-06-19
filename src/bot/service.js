@@ -20,6 +20,12 @@ class BotService {
     this.recentMessages = new Map(); // channelId:userId -> [lastMessages]
     this.timeoutUsers = new Map(); // channelId:userId -> timeout expiry timestamp
     this.modCache = new Map(); // channelId -> { mods: Set, lastFetched: timestamp }
+    this.welcomeMessages = [
+      "Hey {name} , welcome to the stream baby! 💖",
+      "So glad you joined us babe, {name} ! Enjoy the vibes! 🥰",
+      "Welcome, {name} ! Sending you lots of love sweetie! ❤️"
+      
+    ];
     this.initBot();
   }
 
@@ -149,6 +155,9 @@ class BotService {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
       
+      // Reset welcomeMessage for all viewers in this channel for the new live
+      await this.resetWelcomeMessages(channelId);
+      
       // Fetch and cache mod list once per live
       try {
         const { oauth2Client } = await projectService.getYouTubeOAuthClient();
@@ -206,6 +215,15 @@ class BotService {
 
     } catch (error) {
       console.error('[BOT] Error starting bot:', error);
+    }
+  }
+
+  async resetWelcomeMessages(channelId) {
+    try {
+      await Viewer.updateMany({ channelId }, { $set: { welcomeMessage: false } });
+      console.log(`[BOT] Reset welcome messages for channel: ${channelId}`);
+    } catch (error) {
+      console.error('[BOT] Error resetting welcome messages:', error);
     }
   }
 
@@ -326,6 +344,18 @@ class BotService {
         if (text.toLowerCase().startsWith('/')) {
           const [command, ...args] = text.slice(1).split(' ');
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));
+        }
+        // Welcome message logic
+        if (viewer && !viewer.welcomeMessage) {
+          // Send a random loving welcome message
+          const name = authorDetails.displayName || 'friend';
+          const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
+          await this.sendMessage(channelId, msg);
+          await Viewer.findOneAndUpdate(
+            { channelId, viewerId: authorDetails.channelId },
+            { welcomeMessage: true },
+            { upsert: true }
+          );
         }
         return;
       }
