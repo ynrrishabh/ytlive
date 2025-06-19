@@ -352,7 +352,8 @@ class BotService {
         const lastActive = viewer.lastActive ? new Date(viewer.lastActive).getTime() : 0;
         const nowTime = Date.now();
         const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
-        if (diffMinutes >= 15) {
+        console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
+        if (diffMinutes >= 1) {
           const name = authorDetails.displayName || 'friend';
           const msg = `💖 Welcome back, ${name} ! You were away for ${diffMinutes} minutes. We missed you! 🥹`;
           await this.sendMessage(channelId, msg);
