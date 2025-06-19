@@ -355,6 +355,47 @@ class ProjectService {
     });
     return { oauth2Client, project: anyProject };
   }
+
+  // Try all projects for search.list (initial live search), mark as quotaExceeded if fails
+  async getFirstWorkingProjectForSearch(channelId) {
+    await this.loadProjects();
+    for (const project of this.projects) {
+      if (!project.oauthTokens?.access_token) continue;
+      try {
+        const oauth2Client = new google.auth.OAuth2(
+          project.googleClientId,
+          project.googleClientSecret,
+          process.env.GOOGLE_REDIRECT_URI
+        );
+        oauth2Client.setCredentials({
+          access_token: project.oauthTokens.access_token,
+          refresh_token: project.oauthTokens.refresh_token
+        });
+        const youtube = google.youtube('v3');
+        // Try a lightweight search.list API call
+        await youtube.search.list({
+          auth: oauth2Client,
+          part: 'id',
+          channelId: channelId,
+          eventType: 'live',
+          type: 'video',
+          maxResults: 1,
+          fields: 'items(id)' 
+        });
+        // If no error, this project works
+        return { oauth2Client, project };
+      } catch (err) {
+        if (err.errors && err.errors[0]?.reason === 'quotaExceeded' || (err.message && err.message.includes('quota'))) {
+          // Mark as quotaExceeded for this session
+          project.quotaExceeded = true;
+          project.quotaExceededAt = new Date();
+          await project.save();
+        }
+        // Otherwise, try next project
+      }
+    }
+    throw new Error('No available projects with quota remaining for search');
+  }
 }
 
 module.exports = new ProjectService(); 

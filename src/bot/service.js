@@ -80,8 +80,8 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      // Use any available project for search (search.list is not quota heavy)
-      const { oauth2Client, project } = await projectService.getAnyProject();
+      // Try all projects for initial search.list
+      const { oauth2Client, project } = await projectService.getFirstWorkingProjectForSearch(channelId);
       const youtube = google.youtube('v3');
       // Search for live streams (works for both public and unlisted)
       console.log(`[BOT] Searching for live streams on channel ${channelId} using ${project.projectId}...`);
@@ -95,7 +95,7 @@ class BotService {
       if (searchResponse.data.items && searchResponse.data.items.length > 0) {
         console.log(`[BOT] Found live stream for channel ${channelId}`);
         const videoId = searchResponse.data.items[0].id.videoId;
-        // Get live chat ID
+        // Get live chat ID (use same project for videos.list)
         const videoResponse = await youtube.videos.list({
           auth: oauth2Client,
           part: 'liveStreamingDetails,snippet',
