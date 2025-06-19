@@ -350,20 +350,45 @@ class BotService {
         // If user posted same message 2+ times in last 5
         const sameCount = recent.filter(m => m === text).length;
         if (sameCount >= 2) {
-          // Delete message, timeout user, warn in chat
           const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
-          await this.deleteMessage(message.id, channelId, project);
+          console.debug('[BOT][MODERATION] Attempting to delete message:', {
+            messageId: message.id,
+            liveChatId,
+            userChannelId: authorDetails.channelId
+          });
+          if (message.id) {
+            await this.deleteMessage(message.id, channelId, project);
+          } else {
+            console.warn('[BOT][MODERATION] Cannot delete message: message.id is missing');
+          }
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
+          if (liveChatId && authorDetails.channelId) {
+            await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
+          } else {
+            console.warn('[BOT][MODERATION] Cannot timeout user: liveChatId or userChannelId is missing', { liveChatId, userChannelId: authorDetails.channelId });
+          }
           await this.sendMessage(channelId, `@${authorDetails.displayName} spamming is not allowed! You are timed out for 1 min 😡`);
           return;
         }
         // Link detection
         if (/https?:\/\//i.test(text)) {
           const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
-          await this.deleteMessage(message.id, channelId, project);
+          console.debug('[BOT][MODERATION] Attempting to delete message (link):', {
+            messageId: message.id,
+            liveChatId,
+            userChannelId: authorDetails.channelId
+          });
+          if (message.id) {
+            await this.deleteMessage(message.id, channelId, project);
+          } else {
+            console.warn('[BOT][MODERATION] Cannot delete message (link): message.id is missing');
+          }
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
+          if (liveChatId && authorDetails.channelId) {
+            await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
+          } else {
+            console.warn('[BOT][MODERATION] Cannot timeout user (link): liveChatId or userChannelId is missing', { liveChatId, userChannelId: authorDetails.channelId });
+          }
           await this.sendMessage(channelId, `@${authorDetails.displayName} posting links is not allowed! You are timed out for 1 min 😡`);
           return;
         }
