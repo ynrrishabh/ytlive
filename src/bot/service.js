@@ -93,9 +93,9 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
+      // Use any available project for search (search.list is not quota heavy)
+      const { oauth2Client, project } = await projectService.getNextAvailableProject();
       const youtube = google.youtube('v3');
-      
       // Search for live streams (works for both public and unlisted)
       console.log(`[BOT] Searching for live streams on channel ${channelId} using ${project.projectId}...`);
       const searchResponse = await youtube.search.list({
@@ -109,14 +109,12 @@ class BotService {
       if (searchResponse.data.items && searchResponse.data.items.length > 0) {
         console.log(`[BOT] Found live stream for channel ${channelId}`);
         const videoId = searchResponse.data.items[0].id.videoId;
-        
         // Get live chat ID
         const videoResponse = await youtube.videos.list({
           auth: oauth2Client,
           part: 'liveStreamingDetails,snippet',
           id: videoId
         });
-
         if (videoResponse.data.items && videoResponse.data.items.length > 0 && 
             videoResponse.data.items[0].liveStreamingDetails?.activeLiveChatId) {
           const liveBroadcast = {
@@ -124,10 +122,16 @@ class BotService {
               liveChatId: videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId
             }
           };
-          
           if (!this.activeStreams.has(channelId)) {
             console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
-            await this.startBot(channelId, liveBroadcast.snippet.liveChatId);
+            // Try all projects for this live
+            try {
+              const { oauth2Client: workingClient, project: workingProject } = await projectService.getFirstWorkingProjectForLive(liveBroadcast.snippet.liveChatId);
+              // Pass workingClient and workingProject to startBot if needed
+              await this.startBot(channelId, liveBroadcast.snippet.liveChatId);
+            } catch (err) {
+              console.error(`[BOT] No available projects with quota for this live on channel ${channelId}`);
+            }
           }
         } else {
           console.log(`[BOT] Live stream found but no chat ID available for channel: ${channelId}`);

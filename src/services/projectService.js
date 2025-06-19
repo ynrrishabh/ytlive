@@ -11,6 +11,8 @@ class ProjectService {
   // Initialize projects in database
   async initializeProjects() {
     try {
+      // Reset quotaExceeded for all projects on bot start
+      await Project.updateMany({}, { $set: { quotaExceeded: false, quotaExceededAt: null } });
       const existingProjects = await Project.find({});
       
       if (existingProjects.length === 0) {
@@ -296,6 +298,45 @@ class ProjectService {
     }
     
     console.log('\n' + '='.repeat(60));
+  }
+
+  // Try all projects (even quotaExceeded) for a new live, mark as quotaExceeded if fails
+  async getFirstWorkingProjectForLive(liveChatId) {
+    await this.loadProjects();
+    for (const project of this.projects) {
+      if (!project.oauthTokens?.access_token) continue;
+      try {
+        const oauth2Client = new google.auth.OAuth2(
+          project.googleClientId,
+          project.googleClientSecret,
+          process.env.GOOGLE_REDIRECT_URI
+        );
+        oauth2Client.setCredentials({
+          access_token: project.oauthTokens.access_token,
+          refresh_token: project.oauthTokens.refresh_token
+        });
+        const youtube = google.youtube('v3');
+        // Try a lightweight API call
+        await youtube.liveChatMessages.list({
+          auth: oauth2Client,
+          liveChatId: liveChatId,
+          part: 'id',
+          maxResults: 1,
+          fields: 'nextPageToken'
+        });
+        // If no error, this project works
+        return { oauth2Client, project };
+      } catch (err) {
+        if (err.errors && err.errors[0]?.reason === 'quotaExceeded' || (err.message && err.message.includes('quota'))) {
+          // Mark as quotaExceeded for this session
+          project.quotaExceeded = true;
+          project.quotaExceededAt = new Date();
+          await project.save();
+        }
+        // Otherwise, try next project
+      }
+    }
+    throw new Error('No available projects with quota remaining for this live');
   }
 }
 
