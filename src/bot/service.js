@@ -347,6 +347,16 @@ class BotService {
           { welcomeMessage: true },
           { upsert: true }
         );
+      } else {
+        // Welcome back logic: only after initial welcome message
+        const lastActive = viewer.lastActive ? new Date(viewer.lastActive).getTime() : 0;
+        const nowTime = Date.now();
+        const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
+        if (diffMinutes >= 15) {
+          const name = authorDetails.displayName || 'friend';
+          const msg = `💖 Welcome back, ${name} ! You were away for ${diffMinutes} minutes. We missed you! 🥹`;
+          await this.sendMessage(channelId, msg);
+        }
       }
       // If user is marked isFree, skip all moderation and return immediately
       if (viewer.isFree === true) {
