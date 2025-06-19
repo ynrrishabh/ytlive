@@ -297,19 +297,6 @@ class BotService {
       if (!message || !message.snippet || !message.snippet.displayMessage) {
         return;
       }
-
-      // Get current project to check if message is from bot
-      const { project } = await projectService.getYouTubeOAuthClient();
-      const botChannelId = project.oauthTokens?.access_token ? 
-        await this.getBotChannelId(project) : null;
-      if (botChannelId && message.authorDetails.channelId === botChannelId) {
-        // Skip processing bot's own messages
-        return;
-      }
-
-      // Check moderationEnabled for this channel
-      const channel = await Channel.findOne({ channelId });
-      const moderationEnabled = channel?.moderationEnabled;
       const { snippet, authorDetails } = message;
       const text = snippet.displayMessage;
       const userKey = `${channelId}:${authorDetails.channelId}`;
@@ -339,17 +326,11 @@ class BotService {
       }
 
       // 2. Mod/admin check (always after welcome, before moderation)
+      // Always check mod cache synchronously on every message if isAdmin is not boolean
       let isAdmin = viewer.isAdmin;
       if (typeof isAdmin !== 'boolean') {
-        // Not set yet, check mod list (fetch only once per live)
-        let modSet = null;
         const cache = this.modCache.get(channelId);
-        if (cache) {
-          modSet = cache.mods;
-        } else {
-          modSet = new Set();
-        }
-        // Channel owner is always admin
+        const modSet = cache ? cache.mods : new Set();
         const isOwner = authorDetails.channelId === channelId;
         isAdmin = isOwner || (modSet && modSet.has(authorDetails.channelId));
         await Viewer.findOneAndUpdate(
@@ -358,7 +339,6 @@ class BotService {
           { upsert: true }
         );
       }
-      // If admin/mod, skip all moderation
       if (isAdmin) {
         // Update last message timestamp and viewer info as usual
         this.lastMessageTimestamps.set(channelId, Date.now());
@@ -381,7 +361,7 @@ class BotService {
       }
 
       // Timeout check
-      if (moderationEnabled && this.timeoutUsers.has(userKey)) {
+      if (this.timeoutUsers.has(userKey)) {
         const expiry = this.timeoutUsers.get(userKey);
         if (now < expiry) {
           // User is timed out, ignore their messages
@@ -392,6 +372,9 @@ class BotService {
       }
 
       // 3. Spam detection (same message) and link detection (only for non-mods)
+      // Check moderationEnabled for this channel
+      const channel = await Channel.findOne({ channelId });
+      const moderationEnabled = channel?.moderationEnabled;
       if (moderationEnabled) {
         let recent = this.recentMessages.get(userKey) || [];
         recent.push(text);
