@@ -305,9 +305,31 @@ class BotService {
       const userKey = `${channelId}:${authorDetails.channelId}`;
       const now = Date.now();
 
-      // Check if viewer is admin/mod (cache in DB, only check once per viewer)
+      // 1. Welcome message logic (always check first)
       let viewer = await Viewer.findOne({ channelId, viewerId: authorDetails.channelId });
-      let isAdmin = viewer?.isAdmin;
+      if (!viewer) {
+        // Create viewer if not exists
+        viewer = await Viewer.create({
+          channelId,
+          viewerId: authorDetails.channelId,
+          username: authorDetails.displayName,
+          lastActive: new Date(),
+          welcomeMessage: false
+        });
+      }
+      if (!viewer.welcomeMessage) {
+        const name = authorDetails.displayName || 'friend';
+        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
+        await this.sendMessage(channelId, msg);
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          { welcomeMessage: true },
+          { upsert: true }
+        );
+      }
+
+      // 2. Mod/admin check (always before moderation)
+      let isAdmin = viewer.isAdmin;
       if (typeof isAdmin !== 'boolean') {
         // Not set yet, check mod list (fetch only once per live)
         let modSet = null;
@@ -326,7 +348,7 @@ class BotService {
           { upsert: true }
         );
       }
-      // If admin/mod, skip moderation
+      // If admin/mod, skip all moderation
       if (isAdmin) {
         // Update last message timestamp and viewer info as usual
         this.lastMessageTimestamps.set(channelId, Date.now());
@@ -345,18 +367,6 @@ class BotService {
           const [command, ...args] = text.slice(1).split(' ');
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));
         }
-        // Welcome message logic
-        if (viewer && !viewer.welcomeMessage) {
-          // Send a random loving welcome message
-          const name = authorDetails.displayName || 'friend';
-          const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
-          await this.sendMessage(channelId, msg);
-          await Viewer.findOneAndUpdate(
-            { channelId, viewerId: authorDetails.channelId },
-            { welcomeMessage: true },
-            { upsert: true }
-          );
-        }
         return;
       }
 
@@ -371,7 +381,7 @@ class BotService {
         }
       }
 
-      // Spam detection (same message)
+      // 3. Spam detection (same message) and link detection (only for non-mods)
       if (moderationEnabled) {
         let recent = this.recentMessages.get(userKey) || [];
         recent.push(text);
