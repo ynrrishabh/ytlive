@@ -274,7 +274,7 @@ class BotService {
 
       // Process messages
       for (const item of response.data.items) {
-        await this.processMessage(channelId, item);
+        await this.processMessage(channelId, item, project);
       }
     } catch (error) {
       console.error('[BOT] Error polling chat:', error);
@@ -292,7 +292,7 @@ class BotService {
     }
   }
 
-  async processMessage(channelId, message) {
+  async processMessage(channelId, message, project) {
     try {
       if (!message || !message.snippet || !message.snippet.displayMessage) {
         return;
@@ -302,7 +302,7 @@ class BotService {
       const userKey = `${channelId}:${authorDetails.channelId}`;
       const now = Date.now();
 
-      // 1. Welcome message logic (always check first)
+      // 1. Mod/admin check (always first)
       let viewer = await Viewer.findOne({ channelId, viewerId: authorDetails.channelId });
       if (!viewer) {
         // Create viewer if not exists
@@ -314,18 +314,6 @@ class BotService {
           welcomeMessage: false
         });
       }
-      if (!viewer.welcomeMessage) {
-        const name = authorDetails.displayName || 'friend';
-        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
-        await this.sendMessage(channelId, msg);
-        await Viewer.findOneAndUpdate(
-          { channelId, viewerId: authorDetails.channelId },
-          { welcomeMessage: true },
-          { upsert: true }
-        );
-      }
-
-      // 2. Mod/admin check (always after welcome, before moderation)
       // Always check mod cache synchronously on every message if isAdmin is not boolean
       let isAdmin = viewer.isAdmin;
       if (typeof isAdmin !== 'boolean') {
@@ -336,6 +324,17 @@ class BotService {
         await Viewer.findOneAndUpdate(
           { channelId, viewerId: authorDetails.channelId },
           { isAdmin },
+          { upsert: true }
+        );
+      }
+      // 2. Welcome message logic (after admin check)
+      if (!isAdmin && !viewer.welcomeMessage) {
+        const name = authorDetails.displayName || 'friend';
+        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
+        await this.sendMessage(channelId, msg);
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          { welcomeMessage: true },
           { upsert: true }
         );
       }
@@ -392,7 +391,7 @@ class BotService {
           if (message.id) {
             await this.deleteMessage(message.id, channelId, project);
           } else {
-            console.warn('[BOT][MODERATION] Cannot delete message: message.id is missing');
+            console.warn('[BOT][MODERATION] Cannot delete message: message.id is missing', message);
           }
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
           if (liveChatId && authorDetails.channelId) {
@@ -414,7 +413,7 @@ class BotService {
           if (message.id) {
             await this.deleteMessage(message.id, channelId, project);
           } else {
-            console.warn('[BOT][MODERATION] Cannot delete message (link): message.id is missing');
+            console.warn('[BOT][MODERATION] Cannot delete message (link): message.id is missing', message);
           }
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
           if (liveChatId && authorDetails.channelId) {
