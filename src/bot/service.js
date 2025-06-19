@@ -155,8 +155,9 @@ class BotService {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
       
-      // Reset welcomeMessage for all viewers in this channel for the new live
+      // Reset welcomeMessage and isAdmin for all viewers in this channel for the new live
       await this.resetWelcomeMessages(channelId);
+      await this.resetIsAdmin(channelId);
       
       // Fetch and cache mod list once per live
       try {
@@ -224,6 +225,15 @@ class BotService {
       console.log(`[BOT] Reset welcome messages for channel: ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error resetting welcome messages:', error);
+    }
+  }
+
+  async resetIsAdmin(channelId) {
+    try {
+      await Viewer.updateMany({ channelId }, { $unset: { isAdmin: "" } });
+      console.log(`[BOT] Reset isAdmin for channel: ${channelId}`);
+    } catch (error) {
+      console.error('[BOT] Error resetting isAdmin:', error);
     }
   }
 
@@ -328,7 +338,7 @@ class BotService {
         );
       }
 
-      // 2. Mod/admin check (always before moderation)
+      // 2. Mod/admin check (always after welcome, before moderation)
       let isAdmin = viewer.isAdmin;
       if (typeof isAdmin !== 'boolean') {
         // Not set yet, check mod list (fetch only once per live)
