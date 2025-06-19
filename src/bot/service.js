@@ -337,6 +337,17 @@ class BotService {
           welcomeMessage: false
         });
       }
+      // Welcome message logic (for all users)
+      if (!viewer.welcomeMessage) {
+        const name = authorDetails.displayName || 'friend';
+        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
+        await this.sendMessage(channelId, msg);
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          { welcomeMessage: true },
+          { upsert: true }
+        );
+      }
       // If user is marked isFree, skip all moderation and return immediately
       if (viewer.isFree === true) {
         // Optionally update last active and viewer info
@@ -357,17 +368,6 @@ class BotService {
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));
         }
         return;
-      }
-      // Welcome message logic (for all non-isFree users)
-      if (!viewer.welcomeMessage) {
-        const name = authorDetails.displayName || 'friend';
-        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
-        await this.sendMessage(channelId, msg);
-        await Viewer.findOneAndUpdate(
-          { channelId, viewerId: authorDetails.channelId },
-          { welcomeMessage: true },
-          { upsert: true }
-        );
       }
       // Timeout check
       if (this.timeoutUsers.has(userKey)) {
