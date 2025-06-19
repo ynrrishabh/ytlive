@@ -29,28 +29,15 @@ class BotService {
       // Initialize projects first
       const projectStatus = await projectService.initializeProjects();
       console.log(`[BOT] Project status: ${projectStatus.configured}/${projectStatus.total} configured`);
-      
       if (projectStatus.configured === 0) {
         console.log('[BOT] No OAuth accounts configured. Please setup OAuth accounts first.');
         return;
       }
-      
       if (projectStatus.configured < projectStatus.total) {
         console.log(`[BOT] ${projectStatus.configured}/${projectStatus.total} OAuth accounts configured. Waiting for all accounts to be configured before starting.`);
         return;
       }
-
-      // Get all channels to monitor
-      const channels = await Channel.find({});
-      console.log(`[BOT] Found ${channels.length} channels to monitor`);
-
-      // Start monitoring each channel
-      for (const channel of channels) {
-        console.log(`[BOT] Starting monitoring for channel: ${channel.channelId}`);
-        this.checkAndStartLive(channel.channelId);
-      }
-
-      // Start cron job for continuous monitoring
+      // Only initialize live detection, do not start monitoring channels automatically
       this.initLiveDetection();
       this.isInitialized = true;
     } catch (error) {
@@ -94,7 +81,7 @@ class BotService {
   async checkAndStartLive(channelId) {
     try {
       // Use any available project for search (search.list is not quota heavy)
-      const { oauth2Client, project } = await projectService.getNextAvailableProject();
+      const { oauth2Client, project } = await projectService.getAnyProject();
       const youtube = google.youtube('v3');
       // Search for live streams (works for both public and unlisted)
       console.log(`[BOT] Searching for live streams on channel ${channelId} using ${project.projectId}...`);
@@ -105,7 +92,6 @@ class BotService {
         eventType: 'live',
         type: 'video'
       });
-
       if (searchResponse.data.items && searchResponse.data.items.length > 0) {
         console.log(`[BOT] Found live stream for channel ${channelId}`);
         const videoId = searchResponse.data.items[0].id.videoId;

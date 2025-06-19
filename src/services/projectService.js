@@ -338,6 +338,23 @@ class ProjectService {
     }
     throw new Error('No available projects with quota remaining for this live');
   }
+
+  // Get any project with valid tokens (ignores quotaExceeded)
+  async getAnyProject() {
+    await this.loadProjects();
+    const anyProject = this.projects.find(p => p.oauthTokens?.access_token);
+    if (!anyProject) throw new Error('No configured projects available');
+    const oauth2Client = new google.auth.OAuth2(
+      anyProject.googleClientId,
+      anyProject.googleClientSecret,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    oauth2Client.setCredentials({
+      access_token: anyProject.oauthTokens.access_token,
+      refresh_token: anyProject.oauthTokens.refresh_token
+    });
+    return { oauth2Client, project: anyProject };
+  }
 }
 
 module.exports = new ProjectService(); 
