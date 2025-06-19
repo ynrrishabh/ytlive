@@ -302,7 +302,7 @@ class BotService {
       const userKey = `${channelId}:${authorDetails.channelId}`;
       const now = Date.now();
 
-      // 1. Mod/admin check (always first)
+      // Fetch viewer and check isFree
       let viewer = await Viewer.findOne({ channelId, viewerId: authorDetails.channelId });
       if (!viewer) {
         // Create viewer if not exists
@@ -314,21 +314,8 @@ class BotService {
           welcomeMessage: false
         });
       }
-      // Always check mod cache synchronously on every message if isAdmin is not boolean
-      let isAdmin = viewer.isAdmin;
-      if (typeof isAdmin !== 'boolean') {
-        const cache = this.modCache.get(channelId);
-        const modSet = cache ? cache.mods : new Set();
-        const isOwner = authorDetails.channelId === channelId;
-        isAdmin = isOwner || (modSet && modSet.has(authorDetails.channelId));
-        await Viewer.findOneAndUpdate(
-          { channelId, viewerId: authorDetails.channelId },
-          { isAdmin },
-          { upsert: true }
-        );
-        viewer.isAdmin = isAdmin; // Update local viewer object
-      }
-      if (viewer.isAdmin) {
+      // If user is marked isFree, skip all moderation
+      if (viewer.isFree === true) {
         // Update last message timestamp and viewer info as usual
         this.lastMessageTimestamps.set(channelId, Date.now());
         await Viewer.findOneAndUpdate(
@@ -348,7 +335,17 @@ class BotService {
         }
         return;
       }
-
+      // Welcome message logic (for all non-isFree users)
+      if (!viewer.welcomeMessage) {
+        const name = authorDetails.displayName || 'friend';
+        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
+        await this.sendMessage(channelId, msg);
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          { welcomeMessage: true },
+          { upsert: true }
+        );
+      }
       // Timeout check
       if (this.timeoutUsers.has(userKey)) {
         const expiry = this.timeoutUsers.get(userKey);
@@ -359,8 +356,7 @@ class BotService {
           this.timeoutUsers.delete(userKey);
         }
       }
-
-      // 3. Spam detection (same message) and link detection (only for non-mods)
+      // 3. Spam detection (same message) and link detection
       // Check moderationEnabled for this channel
       const channel = await Channel.findOne({ channelId });
       const moderationEnabled = channel?.moderationEnabled;
@@ -415,7 +411,6 @@ class BotService {
           return;
         }
       }
-
       // Update last message timestamp
       this.lastMessageTimestamps.set(channelId, Date.now());
       // Update viewer's last active time
@@ -429,13 +424,11 @@ class BotService {
         },
         { upsert: true }
       );
-
       // Handle commands
       if (text.toLowerCase().startsWith('/')) {
         const [command, ...args] = text.slice(1).split(' ');
         await this.handleCommand(channelId, authorDetails, command, args.join(' '));
       }
-
       console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
     } catch (error) {
       console.error('[BOT] Error processing message:', error);
