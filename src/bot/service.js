@@ -302,6 +302,29 @@ class BotService {
       const userKey = `${channelId}:${authorDetails.channelId}`;
       const now = Date.now();
 
+      // Get bot's own channelId for this project
+      let botChannelId = null;
+      if (project) {
+        botChannelId = await this.getBotChannelId(project);
+      }
+      // If the message is from the bot itself, skip welcome and moderation
+      if (botChannelId && authorDetails.channelId === botChannelId) {
+        // Optionally, still update last active and allow commands if needed
+        this.lastMessageTimestamps.set(channelId, Date.now());
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          {
+            channelId,
+            viewerId: authorDetails.channelId,
+            username: authorDetails.displayName,
+            lastActive: new Date()
+          },
+          { upsert: true }
+        );
+        // Optionally, handle commands from the bot itself (or skip)
+        return;
+      }
+
       // Fetch viewer and check isFree
       let viewer = await Viewer.findOne({ channelId, viewerId: authorDetails.channelId });
       if (!viewer) {
