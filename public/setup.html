@@ -120,6 +120,10 @@
         </div>
         
         <div id="setup-steps" style="display: none;">
+            <div id="channel-moderation-section" class="step">
+                <h3>Step 0: Channel Moderation Control</h3>
+                <div id="channel-list">Loading channels...</div>
+            </div>
             <div class="step">
                 <h3>Step 1: Configure OAuth Accounts</h3>
                 <p>Click the links below to authorize the bot for each Google Cloud project. This allows the bot to send messages in your YouTube live chat.</p>
@@ -296,6 +300,45 @@
             }
         }
         document.getElementById('resume-bot-btn').addEventListener('click', resumeBot);
+
+        async function loadChannels() {
+            const channelListDiv = document.getElementById('channel-list');
+            try {
+                const response = await fetch('/bot/channels');
+                const data = await response.json();
+                if (!data.channels.length) {
+                    channelListDiv.textContent = 'No channels found.';
+                    return;
+                }
+                channelListDiv.innerHTML = '';
+                data.channels.forEach(channel => {
+                    const wrapper = document.createElement('div');
+                    wrapper.style.marginBottom = '10px';
+                    const label = document.createElement('span');
+                    label.textContent = `${channel.channelName} (${channel.channelId})`;
+                    label.style.marginRight = '10px';
+                    const toggle = document.createElement('input');
+                    toggle.type = 'checkbox';
+                    toggle.checked = channel.moderationEnabled;
+                    toggle.onchange = async () => {
+                        toggle.disabled = true;
+                        await fetch(`/bot/channels/${channel.channelId}/moderation`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ enabled: toggle.checked })
+                        });
+                        toggle.disabled = false;
+                    };
+                    wrapper.appendChild(label);
+                    wrapper.appendChild(toggle);
+                    channelListDiv.appendChild(wrapper);
+                });
+            } catch (error) {
+                channelListDiv.textContent = 'Failed to load channels.';
+            }
+        }
+        // Call loadChannels on page load
+        loadChannels();
     </script>
 </body>
 </html> 

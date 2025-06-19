@@ -25,6 +25,10 @@ const channelSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  moderationEnabled: {
+    type: Boolean,
+    default: false
   }
 });
 

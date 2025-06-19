@@ -17,6 +17,9 @@ class BotService {
     this.askCooldowns = new Map(); // channelId:userId -> timestamp for /ask cooldown
     this.isInitialized = false;
     this.paused = false; // Add paused flag
+    this.recentMessages = new Map(); // channelId:userId -> [lastMessages]
+    this.timeoutUsers = new Map(); // channelId:userId -> timeout expiry timestamp
+    this.modCache = new Map(); // channelId -> { mods: Set, lastFetched: timestamp }
     this.initBot();
   }
 
@@ -156,6 +159,32 @@ class BotService {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
       
+      // Fetch and cache mod list once per live
+      try {
+        const { oauth2Client } = await projectService.getYouTubeOAuthClient();
+        const youtube = google.youtube('v3');
+        const mods = new Set();
+        let nextPageToken = undefined;
+        do {
+          const resp = await youtube.liveChatModerators.list({
+            auth: oauth2Client,
+            liveChatId: liveChatId,
+            part: 'snippet',
+            maxResults: 50,
+            pageToken: nextPageToken
+          });
+          if (resp.data.items) {
+            for (const item of resp.data.items) {
+              mods.add(item.snippet.moderatorDetails.channelId);
+            }
+          }
+          nextPageToken = resp.data.nextPageToken;
+        } while (nextPageToken);
+        this.modCache.set(channelId, { mods });
+      } catch (err) {
+        this.modCache.set(channelId, { mods: new Set() });
+      }
+      
       // Initialize with null nextPageToken - this will make the first poll get only the most recent messages
       this.activeStreams.set(channelId, { 
         liveChatId,
@@ -255,18 +284,101 @@ class BotService {
       const { project } = await projectService.getYouTubeOAuthClient();
       const botChannelId = project.oauthTokens?.access_token ? 
         await this.getBotChannelId(project) : null;
-      
       if (botChannelId && message.authorDetails.channelId === botChannelId) {
         // Skip processing bot's own messages
         return;
       }
 
+      // Check moderationEnabled for this channel
+      const channel = await Channel.findOne({ channelId });
+      const moderationEnabled = channel?.moderationEnabled;
+      const { snippet, authorDetails } = message;
+      const text = snippet.displayMessage;
+      const userKey = `${channelId}:${authorDetails.channelId}`;
+      const now = Date.now();
+
+      // Check if viewer is admin/mod (cache in DB, only check once per viewer)
+      let viewer = await Viewer.findOne({ channelId, viewerId: authorDetails.channelId });
+      let isAdmin = viewer?.isAdmin;
+      if (typeof isAdmin !== 'boolean') {
+        // Not set yet, check mod list (fetch only once per live)
+        let modSet = null;
+        const cache = this.modCache.get(channelId);
+        if (cache) {
+          modSet = cache.mods;
+        } else {
+          modSet = new Set();
+        }
+        // Channel owner is always admin
+        const isOwner = authorDetails.channelId === channelId;
+        isAdmin = isOwner || (modSet && modSet.has(authorDetails.channelId));
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          { isAdmin },
+          { upsert: true }
+        );
+      }
+      // If admin/mod, skip moderation
+      if (isAdmin) {
+        // Update last message timestamp and viewer info as usual
+        this.lastMessageTimestamps.set(channelId, Date.now());
+        await Viewer.findOneAndUpdate(
+          { channelId, viewerId: authorDetails.channelId },
+          {
+            channelId,
+            viewerId: authorDetails.channelId,
+            username: authorDetails.displayName,
+            lastActive: new Date()
+          },
+          { upsert: true }
+        );
+        // Handle commands
+        if (text.toLowerCase().startsWith('/')) {
+          const [command, ...args] = text.slice(1).split(' ');
+          await this.handleCommand(channelId, authorDetails, command, args.join(' '));
+        }
+        return;
+      }
+
+      // Timeout check
+      if (moderationEnabled && this.timeoutUsers.has(userKey)) {
+        const expiry = this.timeoutUsers.get(userKey);
+        if (now < expiry) {
+          // User is timed out, ignore their messages
+          return;
+        } else {
+          this.timeoutUsers.delete(userKey);
+        }
+      }
+
+      // Spam detection (same message)
+      if (moderationEnabled) {
+        let recent = this.recentMessages.get(userKey) || [];
+        recent.push(text);
+        if (recent.length > 5) recent = recent.slice(-5);
+        this.recentMessages.set(userKey, recent);
+        // If user posted same message 2+ times in last 5
+        const sameCount = recent.filter(m => m === text).length;
+        if (sameCount >= 2) {
+          // Delete message, timeout user, warn in chat
+          await this.deleteMessage(snippet.id, channelId, project);
+          this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
+          await this.timeoutUser(channelId, authorDetails.channelId, project, snippet.liveChatId);
+          await this.sendMessage(channelId, `@${authorDetails.displayName} spamming is not allowed! You are timed out for 1 min 😡`);
+          return;
+        }
+        // Link detection
+        if (/https?:\/\//i.test(text)) {
+          await this.deleteMessage(snippet.id, channelId, project);
+          this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
+          await this.timeoutUser(channelId, authorDetails.channelId, project, snippet.liveChatId);
+          await this.sendMessage(channelId, `@${authorDetails.displayName} posting links is not allowed! You are timed out for 1 min 😡`);
+          return;
+        }
+      }
+
       // Update last message timestamp
       this.lastMessageTimestamps.set(channelId, Date.now());
-      
-      const { snippet, authorDetails } = message;
-      const text = snippet.displayMessage.toLowerCase();
-
       // Update viewer's last active time
       await Viewer.findOneAndUpdate(
         { channelId, viewerId: authorDetails.channelId },
@@ -280,7 +392,7 @@ class BotService {
       );
 
       // Handle commands
-      if (text.startsWith('/')) {
+      if (text.toLowerCase().startsWith('/')) {
         const [command, ...args] = text.slice(1).split(' ');
         await this.handleCommand(channelId, authorDetails, command, args.join(' '));
       }
@@ -680,6 +792,7 @@ class BotService {
       clearInterval(this.pollIntervals.get(channelId));
       this.pollIntervals.delete(channelId);
     }
+    this.modCache.delete(channelId); // Clear mod cache for this channel
     console.log(`[BOT] Stopped for channel: ${channelId}`);
   }
 
@@ -697,6 +810,41 @@ class BotService {
     this.paused = false;
     this.initBot();
     console.log('[BOT] Bot resumed by user.');
+  }
+
+  // Helper to delete a message
+  async deleteMessage(messageId, channelId, project) {
+    try {
+      const { oauth2Client } = await projectService.getYouTubeOAuthClient();
+      const youtube = google.youtube('v3');
+      await youtube.liveChatMessages.delete({ auth: oauth2Client, id: messageId });
+      console.log(`[BOT] Deleted spam/link message in channel ${channelId}`);
+    } catch (error) {
+      console.error('[BOT] Error deleting message:', error);
+    }
+  }
+
+  // Helper to timeout a user
+  async timeoutUser(channelId, userChannelId, project, liveChatId) {
+    try {
+      const { oauth2Client } = await projectService.getYouTubeOAuthClient();
+      const youtube = google.youtube('v3');
+      await youtube.liveChatBans.insert({
+        auth: oauth2Client,
+        part: 'snippet',
+        requestBody: {
+          snippet: {
+            liveChatId: liveChatId,
+            bannedUserDetails: { channelId: userChannelId },
+            type: 'temporary',
+            banDurationSeconds: 60
+          }
+        }
+      });
+      console.log(`[BOT] Timed out user ${userChannelId} in channel ${channelId}`);
+    } catch (error) {
+      console.error('[BOT] Error timing out user:', error);
+    }
   }
 }
 

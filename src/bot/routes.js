@@ -4,6 +4,7 @@ const botService = require('./service');
 const projectService = require('../services/projectService');
 const User = require('../models/User');
 const Viewer = require('../models/Viewer');
+const Channel = require('../models/Channel');
 
 // Handle OAuth callback (for manual setup)
 router.get('/oauth/callback', async (req, res) => {
@@ -175,6 +176,33 @@ router.post('/check-live', async (req, res) => {
 router.post('/resume', (req, res) => {
   botService.resumeBot();
   res.json({ success: true, message: 'Bot resumed.' });
+});
+
+// Get all channels with moderation status
+router.get('/channels', async (req, res) => {
+  try {
+    const channels = await Channel.find({}, 'channelId channelName moderationEnabled');
+    res.json({ channels });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch channels' });
+  }
+});
+
+// Toggle moderation for a channel
+router.patch('/channels/:channelId/moderation', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { enabled } = req.body;
+    const channel = await Channel.findOneAndUpdate(
+      { channelId },
+      { moderationEnabled: enabled },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    res.json({ channel });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update moderation status' });
+  }
 });
 
 module.exports = router; 
