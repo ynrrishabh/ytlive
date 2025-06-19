@@ -326,19 +326,9 @@ class BotService {
           { isAdmin },
           { upsert: true }
         );
+        viewer.isAdmin = isAdmin; // Update local viewer object
       }
-      // 2. Welcome message logic (after admin check)
-      if (!isAdmin && !viewer.welcomeMessage) {
-        const name = authorDetails.displayName || 'friend';
-        const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
-        await this.sendMessage(channelId, msg);
-        await Viewer.findOneAndUpdate(
-          { channelId, viewerId: authorDetails.channelId },
-          { welcomeMessage: true },
-          { upsert: true }
-        );
-      }
-      if (isAdmin) {
+      if (viewer.isAdmin) {
         // Update last message timestamp and viewer info as usual
         this.lastMessageTimestamps.set(channelId, Date.now());
         await Viewer.findOneAndUpdate(
