@@ -351,17 +351,19 @@ class BotService {
         const sameCount = recent.filter(m => m === text).length;
         if (sameCount >= 2) {
           // Delete message, timeout user, warn in chat
-          await this.deleteMessage(snippet.id, channelId, project);
+          const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
+          await this.deleteMessage(message.id, channelId, project);
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          await this.timeoutUser(channelId, authorDetails.channelId, project, snippet.liveChatId);
+          await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
           await this.sendMessage(channelId, `@${authorDetails.displayName} spamming is not allowed! You are timed out for 1 min 😡`);
           return;
         }
         // Link detection
         if (/https?:\/\//i.test(text)) {
-          await this.deleteMessage(snippet.id, channelId, project);
+          const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
+          await this.deleteMessage(message.id, channelId, project);
           this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          await this.timeoutUser(channelId, authorDetails.channelId, project, snippet.liveChatId);
+          await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
           await this.sendMessage(channelId, `@${authorDetails.displayName} posting links is not allowed! You are timed out for 1 min 😡`);
           return;
         }
@@ -817,6 +819,10 @@ class BotService {
   // Helper to timeout a user
   async timeoutUser(channelId, userChannelId, project, liveChatId) {
     try {
+      if (!liveChatId) {
+        console.error('[BOT] Cannot timeout user: liveChatId is missing');
+        return;
+      }
       const { oauth2Client } = await projectService.getYouTubeOAuthClient();
       const youtube = google.youtube('v3');
       await youtube.liveChatBans.insert({
