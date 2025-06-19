@@ -337,9 +337,9 @@ class BotService {
           welcomeMessage: false
         });
       }
-      // If user is marked isFree, skip all moderation
+      // If user is marked isFree, skip all moderation and return immediately
       if (viewer.isFree === true) {
-        // Update last message timestamp and viewer info as usual
+        // Optionally update last active and viewer info
         this.lastMessageTimestamps.set(channelId, Date.now());
         await Viewer.findOneAndUpdate(
           { channelId, viewerId: authorDetails.channelId },
@@ -351,7 +351,7 @@ class BotService {
           },
           { upsert: true }
         );
-        // Handle commands
+        // Optionally, handle commands from isFree users
         if (text.toLowerCase().startsWith('/')) {
           const [command, ...args] = text.slice(1).split(' ');
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));

@@ -33,6 +33,10 @@ const viewerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isFree: {
+    type: Boolean,
+    default: false
+  },
   welcomeMessage: {
     type: Boolean,
     default: false
