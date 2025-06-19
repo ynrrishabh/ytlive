@@ -388,9 +388,9 @@ class BotService {
         recent.push(text);
         if (recent.length > 5) recent = recent.slice(-5);
         this.recentMessages.set(userKey, recent);
-        // If user posted same message 2+ times in last 5
-        const sameCount = recent.filter(m => m === text).length;
-        if (sameCount >= 2) {
+        // If user posted same message 2+ times in last 5 (i.e., repeated identical message)
+        const repeatCount = recent.filter(m => m === text).length;
+        if (repeatCount >= 2) {
           const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
           console.debug('[BOT][MODERATION] Attempting to delete message:', {
             messageId: message.id,
