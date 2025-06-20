@@ -426,7 +426,7 @@ class BotService {
           }
           this.askCooldowns.set(cooldownKey, now);
 
-          const question = args.trim();
+          const question = Array.isArray(args) ? args.join(' ').trim() : (args || '').trim();
           if (!question) {
             await this.sendMessage(channelId, `${author.displayName} , please provide a question!`);
             return;
