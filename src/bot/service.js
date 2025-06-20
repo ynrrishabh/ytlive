@@ -17,8 +17,6 @@ class BotService {
     this.isInitialized = false;
     this.paused = false; // Add paused flag
     this.recentMessages = new Map(); // channelId:userId -> [lastMessages]
-    this.timeoutUsers = new Map(); // channelId:userId -> timeout expiry timestamp
-    this.modCache = new Map(); // channelId -> { mods: Set, lastFetched: timestamp }
     this.welcomeMessages = [
       "Hey {name} , welcome to the stream! 💖",
       "So glad you joined us, {name} ! Enjoy the vibes! 🥰",
@@ -158,36 +156,8 @@ class BotService {
   async startBot(channelId, liveChatId) {
     try {
       console.log(`[BOT] Started for channel: ${channelId}, liveChatId: ${liveChatId}`);
-      
-      // Reset welcomeMessage and isAdmin for all viewers in this channel for the new live
+      // Reset welcomeMessage for all viewers in this channel for the new live
       await this.resetWelcomeMessages(channelId);
-      await this.resetIsAdmin(channelId);
-      
-      // Fetch and cache mod list once per live
-      try {
-        const { oauth2Client } = await projectService.getYouTubeOAuthClient();
-        const youtube = google.youtube('v3');
-        const mods = new Set();
-        let nextPageToken = undefined;
-        do {
-          const resp = await youtube.liveChatModerators.list({
-            auth: oauth2Client,
-            liveChatId: liveChatId,
-            part: 'snippet',
-            maxResults: 50,
-            pageToken: nextPageToken
-          });
-          if (resp.data.items) {
-            for (const item of resp.data.items) {
-              mods.add(item.snippet.moderatorDetails.channelId);
-            }
-          }
-          nextPageToken = resp.data.nextPageToken;
-        } while (nextPageToken);
-        this.modCache.set(channelId, { mods });
-      } catch (err) {
-        this.modCache.set(channelId, { mods: new Set() });
-      }
       
       // Initialize with null nextPageToken - this will make the first poll get only the most recent messages
       this.activeStreams.set(channelId, { 
@@ -221,15 +191,6 @@ class BotService {
       console.log(`[BOT] Reset welcome messages for channel: ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error resetting welcome messages:', error);
-    }
-  }
-
-  async resetIsAdmin(channelId) {
-    try {
-      await Viewer.updateMany({ channelId }, { $unset: { isAdmin: "" } });
-      console.log(`[BOT] Reset isAdmin for channel: ${channelId}`);
-    } catch (error) {
-      console.error('[BOT] Error resetting isAdmin:', error);
     }
   }
 
@@ -370,7 +331,6 @@ class BotService {
       }
       // If user is marked isFree, skip all moderation and return immediately
       if (viewer.isFree === true) {
-        // Optionally update last active and viewer info
         this.lastMessageTimestamps.set(channelId, Date.now());
         await Viewer.findOneAndUpdate(
           { channelId, viewerId: authorDetails.channelId },
@@ -382,77 +342,11 @@ class BotService {
           },
           { upsert: true }
         );
-        // Optionally, handle commands from isFree users
         if (text.toLowerCase().startsWith('/')) {
           const [command, ...args] = text.slice(1).split(' ');
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));
         }
         return;
-      }
-      // Timeout check
-      if (this.timeoutUsers.has(userKey)) {
-        const expiry = this.timeoutUsers.get(userKey);
-        if (now < expiry) {
-          // User is timed out, ignore their messages
-          return;
-        } else {
-          this.timeoutUsers.delete(userKey);
-        }
-      }
-      // 3. Spam detection (same message) and link detection
-      // Check moderationEnabled for this channel
-      const channel = await Channel.findOne({ channelId });
-      const moderationEnabled = channel?.moderationEnabled;
-      if (moderationEnabled) {
-        let recent = this.recentMessages.get(userKey) || [];
-        recent.push(text);
-        if (recent.length > 5) recent = recent.slice(-5);
-        this.recentMessages.set(userKey, recent);
-        // If user posted same message 2+ times in last 5 (i.e., repeated identical message)
-        const repeatCount = recent.filter(m => m === text).length;
-        if (repeatCount >= 2) {
-          const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
-          console.debug('[BOT][MODERATION] Attempting to delete message:', {
-            messageId: message.id,
-            liveChatId,
-            userChannelId: authorDetails.channelId
-          });
-          if (message.id) {
-            await this.deleteMessage(message.id, channelId, project);
-          } else {
-            console.warn('[BOT][MODERATION] Cannot delete message: message.id is missing', message);
-          }
-          this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          if (liveChatId && authorDetails.channelId) {
-            await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
-          } else {
-            console.warn('[BOT][MODERATION] Cannot timeout user: liveChatId or userChannelId is missing', { liveChatId, userChannelId: authorDetails.channelId });
-          }
-          await this.sendMessage(channelId, `@${authorDetails.displayName} spamming is not allowed! You are timed out for 1 min 😡`);
-          return;
-        }
-        // Link detection
-        if (/https?:\/\//i.test(text)) {
-          const liveChatId = this.activeStreams.get(channelId)?.liveChatId;
-          console.debug('[BOT][MODERATION] Attempting to delete message (link):', {
-            messageId: message.id,
-            liveChatId,
-            userChannelId: authorDetails.channelId
-          });
-          if (message.id) {
-            await this.deleteMessage(message.id, channelId, project);
-          } else {
-            console.warn('[BOT][MODERATION] Cannot delete message (link): message.id is missing', message);
-          }
-          this.timeoutUsers.set(userKey, now + 60 * 1000); // 1 min
-          if (liveChatId && authorDetails.channelId) {
-            await this.timeoutUser(channelId, authorDetails.channelId, project, liveChatId);
-          } else {
-            console.warn('[BOT][MODERATION] Cannot timeout user (link): liveChatId or userChannelId is missing', { liveChatId, userChannelId: authorDetails.channelId });
-          }
-          await this.sendMessage(channelId, `@${authorDetails.displayName} posting links is not allowed! You are timed out for 1 min 😡`);
-          return;
-        }
       }
       // Update last message timestamp
       this.lastMessageTimestamps.set(channelId, Date.now());
@@ -577,7 +471,7 @@ class BotService {
 
       // Use Gemini AI from current project
       const genAI = await projectService.getGeminiAI();
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add instruction for very brief response (max 180 chars)
       const prompt = `Analyze the emotion of the following question. Answer it concisely, staying under 185 characters. If the question is lighthearted, playful, or positive, include relevant emojis within your answer to match the emotion. If the question is serious, neutral, or negative, do not use any emojis. Here is the question: ${question}`;
@@ -660,7 +554,6 @@ class BotService {
       clearInterval(this.pollIntervals.get(channelId));
       this.pollIntervals.delete(channelId);
     }
-    this.modCache.delete(channelId); // Clear mod cache for this channel
     console.log(`[BOT] Stopped for channel: ${channelId}`);
   }
 
