@@ -20,10 +20,15 @@ class BotService {
     this.timeoutUsers = new Map(); // channelId:userId -> timeout expiry timestamp
     this.modCache = new Map(); // channelId -> { mods: Set, lastFetched: timestamp }
     this.welcomeMessages = [
-      "Hey {name} , welcome to the stream baby! 💖",
-      "So glad you joined us babe, {name} ! Enjoy the vibes! 🥰",
-      "Welcome, {name} ! Sending you lots of love sweetie! ❤️"
-      
+      "Hey {name} , welcome to the stream! 💖",
+      "So glad you joined us, {name} ! Enjoy the vibes! 🥰",
+      "Welcome, {name} ! Sending you lots of love! ❤️",
+      "Look who it is! Welcome to the party, {name}! 🎉"
+    ];
+    this.returningWelcomeMessages = [
+      "💖 Welcome back, {name}! You were away for {minutes} minutes. We missed you! 🥰",
+      "Look who's back! Hey {name}, we saved you a spot. You were gone for {minutes} mins! ✨",
+      "Re-welcome, {name}! Glad to see you again after {minutes} minutes. Let's get back to it! 🎉"
     ];
     this.initBot();
   }
@@ -342,7 +347,8 @@ class BotService {
         console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
         if (diffMinutes >= 1) {
           const name = authorDetails.displayName || 'friend';
-          const msg = `💖 Welcome back, ${name} ! You were away for ${diffMinutes} minutes. We missed you! 🥹`;
+          const randomMsgTemplate = this.returningWelcomeMessages[Math.floor(Math.random() * this.returningWelcomeMessages.length)];
+          const msg = randomMsgTemplate.replace('{name}', name).replace('{minutes}', diffMinutes);
           await this.sendMessage(channelId, msg);
         }
       }
