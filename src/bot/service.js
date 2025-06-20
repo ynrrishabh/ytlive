@@ -561,16 +561,17 @@ class BotService {
 
       // Use Gemini AI from current project
       const genAI = await projectService.getGeminiAI();
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       // Add instruction for very brief response (max 180 chars)
-      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Do not add extra words or explanations.\nQuestion: ${question}`;
+      const prompt = `Analyze the emotion of the following question. Answer it concisely, staying under 185 characters. If the question is lighthearted, playful, or positive, include relevant emojis within your answer to match the emotion. If the question is serious, neutral, or negative, do not use any emojis. Here is the question: ${question}`;
+      
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
       
       // Ensure response fits YouTube chat limits (max 180 for answer)
-      if (text.length > 180) text = text.substring(0, 180);
+      if (text.length > 185) text = text.substring(0, 185);
       
       console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
       await this.sendMessage(channelId, `${author.displayName} , ${text}`);
