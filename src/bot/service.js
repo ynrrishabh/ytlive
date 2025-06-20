@@ -21,12 +21,12 @@ class BotService {
       "Hey {name} , welcome to the stream! 💖",
       "So glad you joined us, {name} ! Enjoy the vibes! 🥰",
       "Welcome, {name} ! Sending you lots of love! ❤️",
-      "Look who it is! Welcome to the party, {name}! 🎉"
+      "Look who it is! Welcome to the party, {name} ! 🎉"
     ];
     this.returningWelcomeMessages = [
-      "💖 Welcome back, {name}! You were away for {minutes} minutes. We missed you! 🥰",
-      "Look who's back! Hey {name}, we saved you a spot. You were gone for {minutes} mins! ✨",
-      "Re-welcome, {name}! Glad to see you again after {minutes} minutes. Let's get back to it! 🎉"
+      "💖 Welcome back, {name} ! You were away for {minutes} minutes. We missed you! 🥰",
+      "Look who's back! Hey {name} , we saved you a spot. You were gone for {minutes} mins! ✨",
+      "Re-welcome, {name} ! Glad to see you again after {minutes} minutes. Let's get back to it! 🎉"
     ];
     this.initBot();
   }
