@@ -344,6 +344,7 @@ class BotService {
         );
         if (text.toLowerCase().startsWith('/')) {
           const [command, ...args] = text.slice(1).split(' ');
+          console.log(`[BOT][DEBUG] Detected command: '${command}' with args: '${args.join(' ')}' from ${authorDetails.displayName}`);
           await this.handleCommand(channelId, authorDetails, command, args.join(' '));
         }
         return;
@@ -364,6 +365,7 @@ class BotService {
       // Handle commands
       if (text.toLowerCase().startsWith('/')) {
         const [command, ...args] = text.slice(1).split(' ');
+        console.log(`[BOT][DEBUG] Detected command: '${command}' with args: '${args.join(' ')}' from ${authorDetails.displayName}`);
         await this.handleCommand(channelId, authorDetails, command, args.join(' '));
       }
       console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
