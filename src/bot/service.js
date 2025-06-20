@@ -213,7 +213,11 @@ class BotService {
 
   async resetWelcomeMessages(channelId) {
     try {
-      await Viewer.updateMany({ channelId }, { $set: { welcomeMessage: false } });
+      // Only reset users with welcomeMessage: false, not those with null
+      await Viewer.updateMany(
+        { channelId, welcomeMessage: false }, 
+        { $set: { welcomeMessage: false } }
+      );
       console.log(`[BOT] Reset welcome messages for channel: ${channelId}`);
     } catch (error) {
       console.error('[BOT] Error resetting welcome messages:', error);
@@ -330,7 +334,11 @@ class BotService {
         });
       }
       // Welcome message logic (for all users)
-      if (!viewer.welcomeMessage) {
+      if (viewer.welcomeMessage === null) {
+        // User is marked to never receive welcome messages
+        console.log(`[BOT] Skipping welcome for ${authorDetails.displayName} (welcomeMessage: null)`);
+      } else if (viewer.welcomeMessage === false) {
+        // User should get welcome message
         const name = authorDetails.displayName || 'friend';
         const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
         await this.sendMessage(channelId, msg);
@@ -340,7 +348,7 @@ class BotService {
           { upsert: true }
         );
       } else {
-        // Welcome back logic: only after initial welcome message
+        // User already welcomed (welcomeMessage: true), check for returning message
         const lastActive = viewer.lastActive ? new Date(viewer.lastActive).getTime() : 0;
         const nowTime = Date.now();
         const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
