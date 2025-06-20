@@ -307,7 +307,7 @@ class BotService {
         const nowTime = Date.now();
         const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
         // console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
-        if (diffMinutes >= 1) {
+        if (diffMinutes >= 10) {
           const name = authorDetails.displayName || 'friend';
           const msgTemplate = returningMessages[Math.floor(Math.random() * returningMessages.length)];
           const msg = msgTemplate.replace('{name}', name).replace('{mins}', diffMinutes);
@@ -332,7 +332,7 @@ class BotService {
         const [command, ...args] = text.slice(1).split(' ');
         await this.handleAskCommand(channelId, authorDetails, args.join(' '));
       }
-      console.log(`[BOT] Processed message from ${authorDetails.displayName} in channel ${channelId}: ${text}`);
+      console.log(`[BOT]${authorDetails.displayName} : ${text}`);
     } catch (error) {
       console.error('[BOT] Error processing message:', error);
     }
@@ -416,8 +416,8 @@ class BotService {
       const genAI = await projectService.getGeminiAI();
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
-      // Add instruction for very brief response (max 180 chars)
-      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Do not add extra words or explanations.\nQuestion: ${question}`;
+      // Add to Gemini prompt: reply like a human and use emoji when possible
+      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a human and use emoji when possible. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
