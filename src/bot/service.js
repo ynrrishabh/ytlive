@@ -344,8 +344,8 @@ class BotService {
         const lastActive = viewer.lastActive ? new Date(viewer.lastActive).getTime() : 0;
         const nowTime = Date.now();
         const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
-        console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
-        if (diffMinutes >= 1) {
+        // console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
+        if (diffMinutes >= 10) {
           const name = authorDetails.displayName || 'friend';
           const randomMsgTemplate = this.returningWelcomeMessages[Math.floor(Math.random() * this.returningWelcomeMessages.length)];
           const msg = randomMsgTemplate.replace('{name}', name).replace('{minutes}', diffMinutes);
