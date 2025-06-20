@@ -448,15 +448,24 @@ class BotService {
 
           try {
             const genAI = await projectService.getGeminiAI();
+            console.log('[BOT][DEBUG] Gemini client created:', !!genAI);
             const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            console.log('[BOT][DEBUG] Gemini model created:', !!model);
             const prompt = `Analyze the emotion of the following question. Answer it concisely, staying under 185 characters. If the question is lighthearted, playful, or positive, include relevant emojis within your answer to match the emotion. If the question is serious, neutral, or negative, do not use any emojis. Here is the question: ${question}`;
             const result = await model.generateContent(prompt);
+            console.log('[BOT][DEBUG] Gemini generateContent result:', !!result);
             const response = await result.response;
+            console.log('[BOT][DEBUG] Gemini response object:', !!response);
             let text = response.text();
             if (text.length > 185) text = text.substring(0, 185);
+            console.log('[BOT][DEBUG] Gemini final text:', text);
             await this.sendMessage(channelId, `${author.displayName} , ${text}`);
+            console.log('[BOT][DEBUG] Sent Gemini answer to chat.');
           } catch (error) {
             console.error('[BOT] Error handling /ask Gemini API:', error);
+            if (error && error.stack) {
+              console.error('[BOT][DEBUG] Error stack:', error.stack);
+            }
             await this.sendMessage(channelId, `${author.displayName} , sorry, I couldn't process your question.`);
           }
           break;
