@@ -185,4 +185,30 @@ router.patch('/channels/:channelId/moderation', async (req, res) => {
   }
 });
 
+// Add POST /bot/check-live/:channelId and POST /bot/start-messaging/:channelId endpoints
+router.post('/check-live/:channelId', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const result = await botService.checkLiveStatus(channelId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in manual live check:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error performing live check: ' + error.message 
+    });
+  }
+});
+
+router.post('/start-messaging/:channelId', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const result = await botService.startMessaging(channelId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error starting messaging:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router; 
