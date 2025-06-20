@@ -428,6 +428,7 @@ class BotService {
 
   async handleAskCommand(channelId, author, question) {
     try {
+      console.log(`[BOT][DEBUG] Entered handleAskCommand for ${author.displayName} in channel ${channelId} with question: ${question}`);
       // Cooldown check for /ask
       const cooldownKey = `${channelId}:${author.channelId}`;
       const now = Date.now();
@@ -441,6 +442,7 @@ class BotService {
       this.askCooldowns.set(cooldownKey, now);
 
       if (!question) {
+        console.log(`[BOT][DEBUG] No question provided for /ask by ${author.displayName}`);
         await this.sendMessage(channelId, `${author.displayName} , please provide a question!`);
         return;
       }
@@ -455,6 +457,7 @@ class BotService {
         q.includes('who created you') ||
         q.includes('who built you')
       ) {
+        console.log(`[BOT][DEBUG] Identity question detected for /ask by ${author.displayName}`);
         await this.sendMessage(channelId, `${author.displayName} , I am Mitshuri, made by Rishabh with his love ❤️🤖`);
         return;
       }
@@ -466,6 +469,7 @@ class BotService {
       
       if (botChannelId && author.channelId === botChannelId) {
         // Skip processing bot's own messages
+        console.log(`[BOT][DEBUG] Skipping /ask from bot itself (${author.displayName})`);
         return;
       }
 
@@ -476,14 +480,15 @@ class BotService {
       // Add instruction for very brief response (max 180 chars)
       const prompt = `Analyze the emotion of the following question. Answer it concisely, staying under 185 characters. If the question is lighthearted, playful, or positive, include relevant emojis within your answer to match the emotion. If the question is serious, neutral, or negative, do not use any emojis. Here is the question: ${question}`;
       
+      console.log(`[BOT][DEBUG] Sending prompt to Gemini: ${prompt}`);
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
-      
+      console.log(`[BOT][DEBUG] Gemini raw response: ${text}`);
       // Ensure response fits YouTube chat limits (max 180 for answer)
       if (text.length > 185) text = text.substring(0, 185);
       
-      console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
+      console.log(`[BOT][DEBUG] Sending Gemini answer to chat: ${text}`);
       await this.sendMessage(channelId, `${author.displayName} , ${text}`);
       console.log(`[BOT] Sent AI response to ${author.displayName} in channel ${channelId}`);
     } catch (error) {
