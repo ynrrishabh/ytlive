@@ -5,7 +5,6 @@ const cors = require('cors');
 const path = require('path');
 const authRoutes = require('./auth/routes');
 const botRoutes = require('./bot/routes');
-const botService = require('./bot/service');
 
 const app = express();
 
@@ -16,15 +15,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('[DB] Connected to MongoDB');
-    // Initialize bot service after DB connection
-    botService.initBot();
-
-    app.listen(PORT, () => {
-      console.log(`[SERVER] Server running on port ${PORT}`);
-    });
-  })
+  .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
@@ -47,3 +38,6 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+}); 

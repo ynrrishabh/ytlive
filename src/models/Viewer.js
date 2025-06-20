@@ -13,6 +13,14 @@ const viewerSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  points: {
+    type: Number,
+    default: 0
+  },
+  watchMinutes: {
+    type: Number,
+    default: 0
+  },
   lastActive: {
     type: Date,
     default: Date.now

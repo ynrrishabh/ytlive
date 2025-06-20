@@ -121,6 +121,26 @@ router.post('/auto-message/:channelId', async (req, res) => {
   }
 });
 
+// Get leaderboard
+router.get('/leaderboard/:channelId', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { type = 'points', limit = 10 } = req.query;
+
+    const sortField = type === 'watchTime' ? 'watchTime' : 'points';
+    
+    const leaderboard = await Viewer.find({ channelId })
+      .sort({ [sortField]: -1 })
+      .limit(parseInt(limit))
+      .select('username points watchTime');
+
+    res.json({ leaderboard });
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get project status and OAuth setup URLs
 router.get('/setup', async (req, res) => {
   try {
