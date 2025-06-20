@@ -274,6 +274,14 @@ class BotService {
       }
     } catch (error) {
       console.error('[BOT] Error polling chat:', error);
+      
+      // Handle live chat not found (stream ended)
+      if (error.errors?.[0]?.reason === 'liveChatNotFound') {
+        console.log(`[BOT] Live chat not found for channel ${channelId}. The stream has likely ended. Stopping bot.`);
+        this.stopBot(channelId);
+        return; // Stop further processing
+      }
+      
       if (error.message?.includes('quota')) {
         console.error('[BOT] YouTube API quota exceeded during chat polling. Switching to next project...');
         const { project } = await projectService.getYouTubeOAuthClient();
