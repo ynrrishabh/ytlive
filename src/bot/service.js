@@ -18,12 +18,11 @@ class BotService {
     this.isInitialized = false;
     this.paused = false; // Add paused flag
     this.welcomeMessages = [
-      "Hey {name} , welcome to the stream ,make sure you liked! 💖",
-      "So glad you joined us, {name} ! Enjoy the vibes, make sure you liked! 🥰",
-      "Welcome, {name} ! Sending you lots of love!, make sure you liked! ❤️"
+      "Hey {name} , welcome to the stream ! 💖",
+      "So glad you joined us, {name} ! Enjoy the vibes! 🥰",
+      "Welcome, {name} ! Sending you lots of love! ❤️"
       
     ];
-    this.isMessagingActive = new Map(); // channelId -> boolean
     this.initBot();
   }
 
@@ -243,11 +242,6 @@ class BotService {
   }
 
   async processMessage(channelId, message, project) {
-    // Only process and reply to messages if isMessagingActive[channelId] is true
-    if (!this.isMessagingActive.get(channelId)) {
-      // Just update tokens/page, do not reply or send messages
-      return;
-    }
     try {
       if (!message || !message.snippet || !message.snippet.displayMessage) {
         return;
@@ -498,19 +492,6 @@ class BotService {
     this.paused = false;
     this.initBot();
     console.log('[BOT] Bot resumed by user.');
-  }
-
-  startListening(channelId) {
-    this.isMessagingActive.set(channelId, false);
-    console.log(`[BOT] Started listening for channel: ${channelId}`);
-  }
-
-  async startMessaging(channelId) {
-    this.isMessagingActive.set(channelId, true);
-    // Send the 'I am ON!' message
-    await this.sendMessage(channelId, 'I am ON! command list: /ask');
-    console.log(`[BOT] Started messaging for channel: ${channelId}`);
-    return { success: true, message: 'Bot is now messaging.' };
   }
 }
 
