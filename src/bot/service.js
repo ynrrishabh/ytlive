@@ -417,7 +417,7 @@ class BotService {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add to Gemini prompt: reply like a human and use emoji when possible
-      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human name Mitshuri and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
+      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human name Mitshuri and You are made by Rishabh use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
