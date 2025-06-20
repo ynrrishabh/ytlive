@@ -10,14 +10,6 @@ const channelSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  points: {
-    type: Number,
-    default: 0
-  },
-  watchTime: {
-    type: Number,
-    default: 0 // in minutes
-  },
   lastActive: {
     type: Date,
     default: Date.now
@@ -25,10 +17,6 @@ const channelSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
-  },
-  moderationEnabled: {
-    type: Boolean,
-    default: false
   }
 });
 

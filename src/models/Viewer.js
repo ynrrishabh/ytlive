@@ -21,14 +21,6 @@ const viewerSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  isAdmin: {
-    type: Boolean,
-    default: false
-  },
-  isFree: {
-    type: Boolean,
-    default: false
-  },
   welcomeMessage: {
     type: Boolean,
     default: false
