@@ -179,8 +179,12 @@ class BotService {
 
   async resetWelcomeMessages(channelId) {
     try {
-      await Viewer.updateMany({ channelId }, { $set: { welcomeMessage: false } });
-      console.log(`[BOT] Reset welcome messages for channel: ${channelId}`);
+      // Only reset true/false values to false, preserve null values
+      await Viewer.updateMany(
+        { channelId, welcomeMessage: { $ne: null } }, 
+        { $set: { welcomeMessage: false } }
+      );
+      console.log(`[BOT] Reset welcome messages for channel: ${channelId} (preserved null values)`);
     } catch (error) {
       console.error('[BOT] Error resetting welcome messages:', error);
     }
