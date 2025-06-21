@@ -83,37 +83,47 @@ class BotService {
 
   async checkAndStartLive(channelId) {
     try {
-      // Try all projects for direct video check
+      // Try all projects for initial search.list
       const { oauth2Client, project } = await projectService.getFirstWorkingProjectForSearch(channelId);
       const youtube = google.youtube('v3');
-      
-      // Direct check for live streams using videos.list (much cheaper - 1 unit)
-      console.log(`[BOT] Checking for live streams on channel ${channelId} using ${project.projectId}...`);
-      
-      // Get live videos directly from the channel
-      const videoResponse = await youtube.videos.list({
+      // Search for live streams (works for both public and unlisted)
+      console.log(`[BOT] Searching for live streams on channel ${channelId} using ${project.projectId}...`);
+      const searchResponse = await youtube.search.list({
         auth: oauth2Client,
-        part: 'liveStreamingDetails,snippet',
+        part: 'id,snippet',
         channelId: channelId,
         eventType: 'live',
-        type: 'video',
-        maxResults: 1
+        type: 'video'
       });
-      
-      if (videoResponse.data.items && videoResponse.data.items.length > 0 && 
-          videoResponse.data.items[0].liveStreamingDetails?.activeLiveChatId) {
-        
-        const liveChatId = videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId;
-        console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
-        
-        if (!this.activeStreams.has(channelId)) {
-          // Try all projects for this live
-          try {
-            const { oauth2Client: workingClient, project: workingProject } = await projectService.getFirstWorkingProjectForLive(liveChatId);
-            await this.startBot(channelId, liveChatId);
-          } catch (err) {
-            console.error(`[BOT] No available projects with quota for this live on channel ${channelId}`);
+      if (searchResponse.data.items && searchResponse.data.items.length > 0) {
+        console.log(`[BOT] Found live stream for channel ${channelId}`);
+        const videoId = searchResponse.data.items[0].id.videoId;
+        // Get live chat ID (use same project for videos.list)
+        const videoResponse = await youtube.videos.list({
+          auth: oauth2Client,
+          part: 'liveStreamingDetails,snippet',
+          id: videoId
+        });
+        if (videoResponse.data.items && videoResponse.data.items.length > 0 && 
+            videoResponse.data.items[0].liveStreamingDetails?.activeLiveChatId) {
+          const liveBroadcast = {
+            snippet: {
+              liveChatId: videoResponse.data.items[0].liveStreamingDetails.activeLiveChatId
+            }
+          };
+          if (!this.activeStreams.has(channelId)) {
+            console.log(`[BOT] Found live stream with chat for channel: ${channelId}`);
+            // Try all projects for this live
+            try {
+              const { oauth2Client: workingClient, project: workingProject } = await projectService.getFirstWorkingProjectForLive(liveBroadcast.snippet.liveChatId);
+              // Pass workingClient and workingProject to startBot if needed
+              await this.startBot(channelId, liveBroadcast.snippet.liveChatId);
+            } catch (err) {
+              console.error(`[BOT] No available projects with quota for this live on channel ${channelId}`);
+            }
           }
+        } else {
+          console.log(`[BOT] Live stream found but no chat ID available for channel: ${channelId}`);
         }
       } else {
         console.log(`[BOT] No live stream found for channel: ${channelId}`);
@@ -414,7 +424,7 @@ class BotService {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add to Gemini prompt: reply like a human and use emoji when possible
-      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human name Mitshuri and You are made by Rishabh and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
+      const prompt = `your name is Mitshuri and you are made by Rishabh (tell name and maker only when asked) Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
