@@ -287,7 +287,10 @@ class BotService {
         });
       }
       // Welcome message logic (for all users)
-      if (!viewer.welcomeMessage) {
+      if (viewer.welcomeMessage === null) {
+        // Skip welcome and returning messages for users with null welcomeMessage
+        // This allows other bots like Nightbot to handle them
+      } else if (!viewer.welcomeMessage) {
         const name = authorDetails.displayName || 'friend';
         const msg = this.welcomeMessages[Math.floor(Math.random() * this.welcomeMessages.length)].replace('{name}', name);
         await this.sendMessage(channelId, msg);
@@ -301,12 +304,12 @@ class BotService {
         const returningMessages = [
           `💖 Welcome back, {name} ! You were away for {mins} minutes. We missed you! 🥹`,
           `🌟 {name} ! You returned after {mins} minutes. The stream is better with you! ✨`,
-          `🎉 Yay, {name} ! You came back after {mins} minutes. why you leaved! ?`
+          `🎉 Yay, {name} ! You came back after {mins} minutes. We hope you had a good break! 💫`
         ];
         const lastActive = viewer.lastActive ? new Date(viewer.lastActive).getTime() : 0;
         const nowTime = Date.now();
         const diffMinutes = Math.floor((nowTime - lastActive) / (60 * 1000));
-        // console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
+        console.log(`[BOT][DEBUG] Returning check for ${authorDetails.displayName}: diffMinutes=${diffMinutes}, lastActive=${viewer.lastActive}`);
         if (diffMinutes >= 10) {
           const name = authorDetails.displayName || 'friend';
           const msgTemplate = returningMessages[Math.floor(Math.random() * returningMessages.length)];
@@ -417,7 +420,7 @@ class BotService {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add to Gemini prompt: reply like a human and use emoji when possible
-      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human name Mitshuri and You are made by Rishabh use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
+      const prompt = `Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human name Mitshuri and You are made by Rishabh and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
