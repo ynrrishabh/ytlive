@@ -13,7 +13,6 @@ class BotService {
     this.liveCheckTasks = new Map(); // channelId -> cron task
     this.lastMessageTimestamps = new Map(); // channelId -> timestamp
     this.pollIntervals = new Map(); // channelId -> pollInterval
-    this.eventPollIntervals = new Map(); // channelId -> event poll interval
     this.gambleCooldowns = new Map(); // channelId:userId -> timestamp
     this.askCooldowns = new Map(); // channelId:userId -> timestamp for /ask cooldown
     this.isInitialized = false;
@@ -22,21 +21,7 @@ class BotService {
       "Hey {name} , welcome to the stream ! and make sure you hit the like button💖",
       "So glad you joined us, {name} ! Enjoy the vibes! and make sure you hit the like button🥰",
       "Welcome, {name} ! Sending you lots of love! and make sure you hit the like button❤️"
-    ];
-    this.subscriberMessages = [
-      "🎉 @{username} just subscribed! Welcome to the family! 💖",
-      "🌟 @{username} joined the squad! Thanks for subscribing! ✨",
-      "💫 @{username} is now a subscriber! You're amazing! 🥰"
-    ];
-    this.membershipMessages = [
-      "💎 @{username} just became a member! You're the best! 💖",
-      "👑 @{username} joined the membership! Thank you so much! ✨",
-      "💫 @{username} is now a member! You're incredible! 🥰"
-    ];
-    this.superchatMessages = [
-      "💰 @{username} sent a superchat! Thank you! 💖",
-      "💸 @{username} just donated! You're amazing! ✨",
-      "🎁 @{username} sent a superchat! Thank you so much! 🥰"
+       
     ];
     this.initBot();
   }
@@ -187,12 +172,6 @@ class BotService {
       }, 4000);
       this.pollIntervals.set(channelId, pollInterval);
 
-      // Start event polling every 15 seconds
-      const eventPollInterval = setInterval(() => {
-        this.pollEvents(channelId);
-      }, 15000);
-      this.eventPollIntervals.set(channelId, eventPollInterval);
-
     } catch (error) {
       console.error('[BOT] Error starting bot:', error);
     }
@@ -214,9 +193,6 @@ class BotService {
   async pollChat(channelId) {
     const stream = this.activeStreams.get(channelId);
     if (!stream) return;
-
-    // Don't poll chat if bot is paused
-    if (this.paused) return;
 
     try {
       const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
@@ -266,150 +242,6 @@ class BotService {
         return;
       }
       // Don't stop polling on error, just log it
-    }
-  }
-
-  async pollEvents(channelId) {
-    const stream = this.activeStreams.get(channelId);
-    if (!stream) return;
-
-    // Don't poll events if bot is paused
-    if (this.paused) return;
-
-    try {
-      // Use the same OAuth rotation system as other functions
-      const { oauth2Client, project } = await projectService.getYouTubeOAuthClient();
-      const youtube = google.youtube('v3');
-
-      // Check for new subscribers (independent try-catch)
-      try {
-        await this.checkSubscribers(channelId, oauth2Client, youtube, project);
-      } catch (error) {
-        console.error('[BOT] Error in subscriber check:', error);
-      }
-      
-      // Check for new memberships (independent try-catch)
-      try {
-        await this.checkMemberships(channelId, oauth2Client, youtube, project);
-      } catch (error) {
-        console.error('[BOT] Error in membership check:', error);
-      }
-      
-      // Check for new superchats (independent try-catch)
-      try {
-        await this.checkSuperchats(channelId, oauth2Client, youtube, project);
-      } catch (error) {
-        console.error('[BOT] Error in superchat check:', error);
-      }
-
-    } catch (error) {
-      console.error('[BOT] Error polling events:', error);
-      // Don't stop event polling on error, just log it
-      // Let the individual check methods handle their own quota errors
-    }
-  }
-
-  async checkSubscribers(channelId, oauth2Client, youtube, project) {
-    try {
-      const response = await youtube.subscriptions.list({
-        auth: oauth2Client,
-        part: 'snippet',
-        channelId: channelId,
-        maxResults: 5,
-        order: 'relevance'
-      });
-
-      if (response.data.items && response.data.items.length > 0) {
-        for (const subscription of response.data.items) {
-          const subscriberId = subscription.snippet.resourceId.channelId;
-          const subscriberName = subscription.snippet.title;
-          const publishedAt = new Date(subscription.snippet.publishedAt);
-          const now = new Date();
-          
-          // Check if subscription is recent (within last 20 seconds)
-          if (now - publishedAt < 20000) {
-            const message = this.subscriberMessages[Math.floor(Math.random() * this.subscriberMessages.length)]
-              .replace('{username}', subscriberName);
-            await this.sendMessage(channelId, message);
-            console.log(`[BOT] Sent subscriber message for ${subscriberName} in channel ${channelId}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[BOT] Error checking subscribers:', error);
-      if (error.message?.includes('quota')) {
-        console.error('[BOT] YouTube API quota exceeded while checking subscribers. Switching to next project...');
-        await projectService.markQuotaExceeded(project.projectId);
-      }
-    }
-  }
-
-  async checkMemberships(channelId, oauth2Client, youtube, project) {
-    try {
-      const response = await youtube.members.list({
-        auth: oauth2Client,
-        part: 'snippet',
-        channelId: channelId,
-        maxResults: 5
-      });
-
-      if (response.data.items && response.data.items.length > 0) {
-        for (const member of response.data.items) {
-          const memberId = member.snippet.memberDetails.channelId;
-          const memberName = member.snippet.memberDetails.displayName;
-          const publishedAt = new Date(member.snippet.publishedAt);
-          const now = new Date();
-          
-          // Check if membership is recent (within last 20 seconds)
-          if (now - publishedAt < 20000) {
-            const message = this.membershipMessages[Math.floor(Math.random() * this.membershipMessages.length)]
-              .replace('{username}', memberName);
-            await this.sendMessage(channelId, message);
-            console.log(`[BOT] Sent membership message for ${memberName} in channel ${channelId}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[BOT] Error checking memberships:', error);
-      if (error.message?.includes('quota')) {
-        console.error('[BOT] YouTube API quota exceeded while checking memberships. Switching to next project...');
-        await projectService.markQuotaExceeded(project.projectId);
-      }
-    }
-  }
-
-  async checkSuperchats(channelId, oauth2Client, youtube, project) {
-    try {
-      const response = await youtube.superChatEvents.list({
-        auth: oauth2Client,
-        part: 'snippet',
-        channelId: channelId,
-        maxResults: 5
-      });
-
-      if (response.data.items && response.data.items.length > 0) {
-        for (const superchat of response.data.items) {
-          const donorId = superchat.snippet.donorDetails.channelId;
-          const donorName = superchat.snippet.donorDetails.displayName;
-          const amount = superchat.snippet.amountDisplayString;
-          const publishedAt = new Date(superchat.snippet.publishedAt);
-          const now = new Date();
-          
-          // Check if superchat is recent (within last 20 seconds)
-          if (now - publishedAt < 20000) {
-            const message = this.superchatMessages[Math.floor(Math.random() * this.superchatMessages.length)]
-              .replace('{username}', donorName);
-            await this.sendMessage(channelId, message);
-            console.log(`[BOT] Sent superchat message for ${donorName} (${amount}) in channel ${channelId}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[BOT] Error checking superchats:', error);
-      if (error.message?.includes('quota')) {
-        console.error('[BOT] YouTube API quota exceeded while checking superchats. Switching to next project...');
-        await projectService.markQuotaExceeded(project.projectId);
-      }
     }
   }
 
@@ -649,10 +481,6 @@ class BotService {
     if (this.pollIntervals.has(channelId)) {
       clearInterval(this.pollIntervals.get(channelId));
       this.pollIntervals.delete(channelId);
-    }
-    if (this.eventPollIntervals.has(channelId)) {
-      clearInterval(this.eventPollIntervals.get(channelId));
-      this.eventPollIntervals.delete(channelId);
     }
     console.log(`[BOT] Stopped for channel: ${channelId}`);
   }
