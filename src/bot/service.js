@@ -18,9 +18,9 @@ class BotService {
     this.isInitialized = false;
     this.paused = false; // Add paused flag
     this.welcomeMessages = [
-      "Hey {name} , welcome to the stream ! and make sure you hit the like button💖",
-      "So glad you joined us, {name} ! Enjoy the vibes! and make sure you hit the like button🥰",
-      "Welcome, {name} ! Sending you lots of love! and make sure you hit the like button❤️"
+      "Hey {name} , welcome to the stream !💖",
+      "So glad you joined us, {name} ! Enjoy the vibes!🥰",
+      "Welcome, {name} ! Sending you lots of love!❤️"
        
     ];
     this.initBot();
