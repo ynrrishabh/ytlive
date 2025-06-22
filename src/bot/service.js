@@ -382,7 +382,7 @@ class BotService {
       const cooldownKey = `${channelId}:${author.channelId}`;
       const now = Date.now();
       const lastAsk = this.askCooldowns.get(cooldownKey);
-      if (lastAsk && now - lastAsk < 120 * 1000) {
+      if (lastAsk && now - lastAsk < 200 * 1000) {
         // On cooldown, do not reply
         console.log(`[BOT] Ignored /ask from ${author.displayName} in channel ${channelId} due to 2 min cooldown.`);
         return;
