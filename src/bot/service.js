@@ -18,9 +18,9 @@ class BotService {
     this.isInitialized = false;
     this.paused = false; // Add paused flag
     this.welcomeMessages = [
-      "Hey {name} , welcome to the stream !💖",
-      "So glad you joined us, {name} ! Enjoy the vibes!🥰",
-      "Welcome, {name} ! Sending you lots of love!❤️"
+      "Hey {name} , welcome to the stream !💖 and please make sure you like the stream💝",
+      "So glad you joined us, {name} ! Enjoy the vibes!🥰 and please make sure you like the stream💝",
+      "Welcome, {name} ! Sending you lots of love!❤️ and please make sure you like the stream💝"
        
     ];
     this.initBot();
@@ -424,7 +424,7 @@ class BotService {
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       
       // Add to Gemini prompt: reply like a human and use emoji when possible
-      const prompt = `your name is Mitshuri and you are made by Rishabh (tell name and maker only when asked) Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
+      const prompt = `your name is Mitshuri and you are made by Rishabh for managing live stream chat of youTube channel DONT CRY LIVE of Harshit Rajput(known as dont cry/dc) he plays bgmi and do live (tell name and maker only when asked) Please answer the following question in the shortest, most concise way possible, using no more than 180 characters. Reply like a girl human and use emoji when possible at anywhere in response not only at the end. Do not add extra words or explanations.\nQuestion: ${question}`;
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
