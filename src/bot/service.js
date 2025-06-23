@@ -382,7 +382,7 @@ class BotService {
       const cooldownKey = `${channelId}:${author.channelId}`;
       const now = Date.now();
       const lastAsk = this.askCooldowns.get(cooldownKey);
-      if (lastAsk && now - lastAsk < 200 * 1000) {
+      if (lastAsk && now - lastAsk < 120 * 1000) {
         // On cooldown, do not reply
         console.log(`[BOT] Ignored /ask from ${author.displayName} in channel ${channelId} due to 2 min cooldown.`);
         return;
@@ -430,7 +430,7 @@ class BotService {
       let text = response.text();
       
       // Ensure response fits YouTube chat limits (max 180 for answer)
-      if (text.length > 180) text = text.substring(0, 180);
+      if (text.length > 180) text = text.substring(0, 185);
       
       console.log(`[BOT][DEBUG][GEMINI] Gemini response for /ask:`, text);
       await this.sendMessage(channelId, `${author.displayName} , ${text}`);
